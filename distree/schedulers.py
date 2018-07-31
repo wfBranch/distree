@@ -11,6 +11,7 @@ import numpy as np
 
 import subprocess
 import uuid
+import sys
 
 class Sched():
     def get_id(self):
@@ -39,7 +40,7 @@ class Sched_Local_SameProc(Sched):
 
 
 class Sched_Local(Sched):
-    def __init__(self, scriptpath, scriptargs=[], python_command='python'):
+    def __init__(self, scriptpath, scriptargs=[], python_command=sys.executable):
         self.scriptpath = scriptpath
         self.scriptargs = scriptargs
         self.python_command = python_command
