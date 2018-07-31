@@ -74,8 +74,7 @@ class Distree_Demo(dst.Distree):
         t_1 = t_0 + 1
         state = sp.rand(4) * state
 
-        #Update some of the taskdata structure based on the task we ran,
-        #then ask for it to be saved.
+        #Update some of the taskdata structure based on the task we ran.
         taskdata['t_1'] = t_1
         taskdata['state'] = state
 
@@ -83,7 +82,7 @@ class Distree_Demo(dst.Distree):
         if t_1 < t_max:
             taskdata = self.branch(taskdata, task_id, parent_id)
 
-        #overwrite initial data
+        #Save the final taskdata, overwriting the initial data file(s)
         self.save_task_data(taskdata_path, taskdata, task_id, parent_id) 
 
 
