@@ -74,19 +74,33 @@ class Distree_Demo(dst.Distree):
         t_1 = t_0 + 1
         state = sp.rand(4) * state
 
-        #If the simulation is not over, there will be children!
-        if t_1 < t_max:
-            num_children = 2 #rnd.randint(0, 4)
-        else:
-            num_children = 0
-
         #Update some of the taskdata structure based on the task we ran,
         #then ask for it to be saved.
         taskdata['t_1'] = t_1
         taskdata['state'] = state
-        taskdata['num_children'] = num_children
-        self.save_task_data(taskdata_path, taskdata, task_id, parent_id) #overwrites initial data
 
+        #If the simulation is not over, there will be children!
+        if t_1 < t_max:
+            taskdata = self.branch(taskdata, task_id, parent_id)
+
+        #overwrite initial data
+        self.save_task_data(taskdata_path, taskdata, task_id, parent_id) 
+
+
+    def branch(self, taskdata, task_id, parent_id):
+        parent_path = taskdata['parent_path']
+        branch_num = taskdata['branch_num']
+        t_1 = taskdata['t_1']
+        t_max = taskdata['t_max']
+        state = taskdata['state']
+        coeff = taskdata['coeff']
+
+        #determine number of children
+        num_children = 2
+        #modify the 
+        taskdata['num_children'] = 2
+
+        #determine the child's parent branch path 
         branch_path = self.branch_path(parent_path, branch_num)
 
         #create taskdata files for, and schedule, children
@@ -96,14 +110,18 @@ class Distree_Demo(dst.Distree):
                                 't_0': t_1, 
                                 't_1': None, 
                                 't_max': t_max,
-                                'state': state * (child_branch+1), #a new state for each child
+                                #a new state for each child
+                                'state': state * (child_branch+1),
                                 'coeff': coeff/(child_branch+1), 
                                 'num_children': None}
 
             #This will assign a new task_id to each child, add their tasks to
             #the log, and schedule them to be run. How they are run is up to
             #the scheduler.
-            self.schedule_task(task_id, child_taskdata)
+            child_id, child_path = self.schedule_task(task_id, child_taskdata)
+            #NOTE: We could add more child info to the parent taskdata here
+
+        return taskdata
 
 #Build an anytree from saved data by parsing the log file.
 def build_tree(dtree):
@@ -111,17 +129,19 @@ def build_tree(dtree):
     r = atr.Resolver('name')
     with open(dtree.log_path, "r") as f:
         for line in f:
-            task_id, parent_id, taskdata_path = line.strip().split("\t")
+            task_id1, parent_id1, taskdata_path = line.strip().split("\t")
             taskdata, task_id2, parent_id2 = dtree.load_task_data(taskdata_path)
-            assert task_id == str(task_id2)
-            assert parent_id == str(parent_id2)
+            assert task_id1 == str(task_id2)
+            assert parent_id1 == str(parent_id2)
 
             parent_path = taskdata['parent_path']
             branch_num = taskdata['branch_num']
             num_children = taskdata['num_children']
             
             if top is None:
+                #Check that this really is a top-level node
                 assert parent_id2 == "" or parent_id2 is None
+
                 top = atr.Node('%u' % branch_num, task_id=task_id2, 
                                 parent_id=parent_id2, 
                                 num_children=num_children, 
@@ -140,45 +160,45 @@ def build_tree(dtree):
 
     return top
 
+if __name__ == "__main__":
+    #Create a scheduler and tell it what script to run to schedule tasks.
+    sched = SL.Sched_Local(sys.argv[0], scriptargs=['--child'])
 
-#Create a scheduler and tell it what script to run to schedule tasks.
-sched = SL.Sched_Local(sys.argv[0], scriptargs=['--child'])
+    #Create the tree object, telling it where the logfile lives, where the taskdata
+    #files are to be stored, and giving it the scheduler to use.
+    dtree = Distree_Demo('logfile.txt', '', sched)
 
-#Create the tree object, telling it where the logfile lives, where the taskdata
-#files are to be stored, and giving it the scheduler to use.
-dtree = Distree_Demo('logfile.txt', '', sched)
+    #NOTE: This script is designed so that it can schedule the root job and also
+    #      child jobs, depending on the supplied command-line arguments.
 
-#NOTE: This script is designed so that it can schedule the root job and also
-#      child jobs, depending on the supplied command-line arguments.
+    if len(sys.argv) == 1: 
+        #Save a simple initial taskdata file and schedule a root job!
+        init_task_data = {'parent_path': '', 
+                        'branch_num': 0, 
+                        't_0': 0, 
+                        't_1': None, 
+                        't_max': 4, 
+                        'state': sp.rand(4),
+                        'coeff': 1.0,
+                        'num_children': None}
+        dtree.save_task_data('root.npy', init_task_data, None, None)
+        #The following schedules a job (it will be run in a different process)
+        dtree.schedule_task_from_file('root.npy')
 
-if len(sys.argv) == 1: 
-    #Save a simple initial taskdata file and schedule a root job!
-    init_task_data = {'parent_path': '', 
-                    'branch_num': 0, 
-                    't_0': 0, 
-                    't_1': None, 
-                    't_max': 4, 
-                    'state': sp.rand(4),
-                    'coeff': 1.0,
-                    'num_children': None}
-    dtree.save_task_data('root.npy', init_task_data, None, None)
-    #The following schedules a job (it will be run in a different process)
-    dtree.schedule_task_from_file('root.npy')
+    elif len(sys.argv) == 2:
+        if sys.argv[1] == '--show':
+            #Print the tree from saved data
+            top = build_tree(dtree)
+            print(atr.RenderTree(top))
+        else:
+            #Assume the single argument is a taskdata file to be used for a root job
+            dtree.schedule_task_from_file(sys.argv[1])
 
-elif len(sys.argv) == 2:
-    if sys.argv[1] == '--show':
-        #Print the tree from saved data
-        top = build_tree(dtree)
-        print(atr.RenderTree(top))
-    else:
-        #Assume the single argument is a taskdata file to be used for a root job
-        dtree.schedule_task_from_file(sys.argv[1])
-
-elif len(sys.argv) == 3:
-    if sys.argv[2] == '--child':
-        #Assume the first argument is a taskdata file for a child job.
-        #This means the task should be run in the current process,
-        #rather than be scheduled for later.
-        dtree.run_task(sys.argv[1])
-    else:
-        print("I don't know what you want from me.")
+    elif len(sys.argv) == 3:
+        if sys.argv[2] == '--child':
+            #Assume the first argument is a taskdata file for a child job.
+            #This means the task should be run in the current process,
+            #rather than be scheduled for later.
+            dtree.run_task(sys.argv[1])
+        else:
+            print("I don't know what you want from me.")
