@@ -90,7 +90,7 @@ class Distree_Demo(dst.Distree):
                                 'coeff': coeff/(child_branch+1), 
                                 'num_children': None}
 
-            self.new_task(task_id, child_taskdata)
+            self.schedule_task(task_id, child_taskdata)
 
 
 
@@ -109,7 +109,7 @@ init_task_data = {'parent_path': '',
                     'state': sp.rand(4),
                     'coeff': 1.0,
                     'num_children': None}
-dtree.new_task('', init_task_data)
+dtree.schedule_task('', init_task_data)
 dtree.sched.run()
 
 import anytree as atr

@@ -25,19 +25,19 @@ class Distree():
             f.write('%s\t%s\t%s\n' % (task_id, parent_id, data_fn))
             f.close()
 
-    def new_task_from_file(self, taskdata_path, parent_id=None):
+    def schedule_task_from_file(self, taskdata_path, parent_id=None):
         task_data, task_id, parent_id_ld = self.load_task_data(taskdata_path)
         if parent_id is None:
             parent_id = parent_id_ld
         
-        return self.new_task(parent_id, task_data)
+        return self.schedule_task(parent_id, task_data)
     
     """
     Logs and schedules a new task as a child of the task specified by
     `parent_id`. All data required by the task are in `task_data`,
     whose content is specified in a sub-class.
     """
-    def new_task(self, parent_id, task_data):
+    def schedule_task(self, parent_id, task_data):
         #Generate an id now, before the task is scheduled, so we can save it
         #in the taskdata file.
         task_id = self.sched.get_id()
