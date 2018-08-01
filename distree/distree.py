@@ -7,12 +7,17 @@ Created on Wed Jul 25 16:10:00 2018
 """
 
 import filelock
+import pathlib
 
 class Distree():
     def __init__(self, log_path, data_path, scheduler):
         self.data_path = data_path
         self.log_path = log_path
         self.sched = scheduler
+        # Make sure that, if data_path or log_path includes a directory, that
+        # directory exists, creating it if necessary.
+        pathlib.Path(data_path).mkdir(parents=True, exist_ok=True)
+        pathlib.Path(log_path).parent.mkdir(parents=True, exist_ok=True)
 
     """
     Logs a task in a central log file. This is convenient, as it is easy to
@@ -31,7 +36,7 @@ class Distree():
             parent_id = parent_id_ld
         
         return self.schedule_task(parent_id, task_data)
-    
+
     """
     Logs and schedules a new task as a child of the task specified by
     `parent_id`. All data required by the task are in `task_data`,
@@ -82,7 +87,7 @@ class Distree():
         f.close()
         taskdata = []
         return taskdata, task_id, parent_id
-    
+
     """
     This is where the actual content goes! Actually run a task.
     """
