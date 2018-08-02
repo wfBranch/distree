@@ -6,6 +6,8 @@ Created on Wed Jul 25 16:10:00 2018
 
 """
 
+import os
+
 import scipy as sp
 import numpy as np
 
@@ -63,6 +65,7 @@ class Sched_PBS(Sched):
         self.python_command = python_command
         self.res_list = res_list
         self.job_env = job_env
+        self.jobname = os.path.basename(scriptpath)
 
     def get_id(self):
         return uuid.uuid1() #tasks are assigned UUID's based on the host that schedules them
@@ -70,7 +73,7 @@ class Sched_PBS(Sched):
     def schedule_task(self, taskdata_path):
         scmd = '%s %s %s %s' % (self.python_command, self.scriptpath, taskdata_path, self.scriptargs)
 
-        qsub_cmd = 'qsub -q %s -k oe' % (self.qname)
+        qsub_cmd = 'qsub -N %s -q %s -k oe' % (quote(self.jobname), self.qname)
         if len(self.res_list) > 0:
             qsub_cmd = qsub_cmd + ' -l %s' % self.res_list
 
