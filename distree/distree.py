@@ -6,9 +6,9 @@ Created on Wed Jul 25 16:10:00 2018
 
 """
 
+import os
 import filelock
 import pathlib
-
 class Distree():
     def __init__(self, log_path, data_path, scheduler):
         self.data_path = data_path
@@ -64,7 +64,7 @@ class Distree():
     """
     def get_taskdata_path(self, task_id):
         assert False, "Example implementation!"
-        return self.data_path + '%s.npy' % task_id
+        return os.path.join(self.data_path, '%s.npy' % task_id)
 
     """
     Specifies the taskdata format. The implementation must save
