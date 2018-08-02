@@ -164,7 +164,7 @@ if __name__ == "__main__":
     #Create a scheduler and tell it what script to run to schedule tasks. #qname, scriptpath, scriptargs='', python_command=sys.executable, res_list='', job_env=''
     scriptpath = os.path.abspath(__file__) 
     datapath = os.path.abspath(os.path.dirname(__file__))
-    sched = SL.Sched_PBS('qwork', scriptpath, scriptargs='--child', python_command='python', res_list='walltime=120:00:00')
+    sched = SL.Sched_PBS('qtest', scriptpath, scriptargs='--child', python_command='python', res_list='walltime=01:00:00')
 
     #Create the tree object, telling it where the logfile lives, where the taskdata
     #files are to be stored, and giving it the scheduler to use.
