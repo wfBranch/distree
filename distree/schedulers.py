@@ -79,5 +79,5 @@ class Sched_PBS(Sched):
 
         cmd = 'echo %s | %s' % (quote(scmd), qsub_cmd)
         print('Running: ', cmd)
-        #p = subprocess.run(args, shell=True)
-        #p.check_returncode()
+        p = subprocess.run(cmd, shell=True)
+        p.check_returncode()
