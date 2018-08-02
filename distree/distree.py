@@ -9,6 +9,7 @@ Created on Wed Jul 25 16:10:00 2018
 import os
 import filelock
 import pathlib
+
 class Distree():
     def __init__(self, log_path, data_path, scheduler):
         self.data_path = data_path
