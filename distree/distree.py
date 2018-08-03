@@ -42,10 +42,11 @@ class Distree():
     `parent_id`. All data required by the task are in `task_data`,
     whose content is specified in a sub-class.
     """
-    def schedule_task(self, parent_id, task_data):
-        #Generate an id now, before the task is scheduled, so we can save it
-        #in the taskdata file.
-        task_id = self.sched.get_id()
+    def schedule_task(self, parent_id, task_data, task_id=None):
+        if task_id is None:
+            # Generate an id now, before the task is scheduled, so we can save
+            # it in the taskdata file.
+            task_id = self.sched.get_id()
         
         #Save taskdata file
         taskdata_path = self.get_taskdata_path(task_id)
