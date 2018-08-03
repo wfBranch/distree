@@ -1,0 +1,7 @@
+i1: 3
+i2: 4
+system_for_records: BC
+eps_ker_C: !!float 1e-5
+coeff_tol: !!float 1e-4
+degeneracy_tol: !!float 1e-4
+transfer_operator_method: low_bond_dimension 

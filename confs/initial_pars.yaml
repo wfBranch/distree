@@ -1,0 +1,18 @@
+hamiltonian: double_heisenberg_ising
+qn: 4
+N: 10
+stiffness: 8
+chi: 2.0
+omega: 1.0
+bond_dim: 20
+auto_truncate: False
+sanity_checks: False
+zero_tol: !!float 1e-17
+theta1:  0.37619240903033213
+phi1: 3.676699204438477
+theta2:  2.2815584984041757
+phi2: 5.569523747854273
+
+
+
+

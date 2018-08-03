@@ -18,19 +18,33 @@ import yaml
 import logging
 import datetime
 import argparse
+import matica
+import evoMPS.tdvp_gen as tdvp
+import pickle
+from evolve import evolve_mps
+from find_branches import find_branches
 
 class Distree_Demo(dst.Distree):
+    @staticmethod
+    def dump_yaml(data, path):
+        with open(path, 'w') as f:
+            yaml.dump(data, f, default_flow_style=False)
+
+    @staticmethod
+    def load_yaml(path):
+        with open(path, 'r') as f:
+            data = yaml.load(f)
+        return data
+
     def get_taskdata_path(self, task_id):
         return self.data_path + '%s.yaml' % task_id
 
     def save_task_data(self, taskdata_path, data, task_id, parent_id):
         data.update(task_id=task_id, parent_id=parent_id)
-        with open(taskdata_path, 'w') as f:
-            yaml.dump(data, f, default_flow_style=False)
+        self.dump_yaml(data, taskdata_path)
 
     def load_task_data(self, taskdata_path):
-        with open(taskdata_path, 'r') as f:
-            taskdata = yaml.load(f)
+        taskdata = self.yaml_load(taskdata_path)
         task_id = taskdata.get("task_id", None)
         parent_id = taskdata.get("parent_id", None)
         return taskdata, task_id, parent_id
@@ -42,34 +56,37 @@ class Distree_Demo(dst.Distree):
     @staticmethod
     def measure_data(state, taskdata):
         # TODO Actually measure meaningful things about an MPS.
-        data = state[0]
+        # Squares of the Schmidt coefficients across the bond in the middle of
+        # the lattice.
+        data = list(state.schmidt_sq(int(state.N/2)).real) 
         return data
 
     @staticmethod
     def generate_state_filename(task_id, t):
-        filename = "{}_t{}.npy".format(task_id, t)
+        filename = "{}_t{}.p".format(task_id, t)
         return filename
 
     def store_state(self, state, filename=None, **kwargs):
         if not filename:
             filename = self.generate_state_filename(**kwargs)
         path = self.data_path + filename
-        np.save(path, state)
+        with open(path, "wb") as f:
+            pickle.dump(state, f)
         return path
 
     def load_state(self, path):
-        state = np.load(path)
+        with open(path, "rb") as f:
+            state = pickle.load(f)
         return state
 
-    def should_branch(self, state, t, t_0, taskdata):
-        # TODO Actually determine based on the state and elapsed time whether
-        # we should try branching or not.
-        return state > 4
+    def should_branch(self, state, t, prev_branching_time, taskdata):
+        # TODO This should be replaced with some more sophisticated check of
+        # when to branch, based also on properties of the state.
+        return t > 2 and t - prev_branching_time > 0.5
 
     def evolve_state(self, state, taskdata):
-        # TODO Actually do time-evolution of the state.
-        state += 1.0
-        time_increment = 1.0
+        pars = self.yaml_load(taskdata["time_evo_pars_path"])
+        state, time_increment = evolve_mps(state, pars)
         return state, time_increment
 
     def run_task(self, taskdata_path):
@@ -80,10 +97,19 @@ class Distree_Demo(dst.Distree):
         taskdata, task_id, parent_id = self.load_task_data(taskdata_path)
 
         # Put some data into local variables for convenience
-        state_paths = taskdata["state_paths"]
+        state_paths = taskdata.get("state_paths", {})
         # TODO Change the value of measurements to not be a dictionary, but
         # perhaps a path to a single data file, maybe in HDF5 or in plaintext.
         measurements = taskdata.get("measurements", {})
+
+        # Check if the dictionary of states at different times is empty.
+        if not state_paths:
+            logging.info("The task {} has no states in it, so we initialize.")
+            initial_pars = self.yaml_load(taskdata["initial_pars_path"])
+            s = initial_state(initial_pars)
+            s_path = dtree.store_state(s, t=0.0, task_id=task_id)
+            state_paths[0.0] = s_path
+            taskdata["state_paths"] = state_paths
 
         has_children = "children" in taskdata and taskdata["children"]
         if has_children:
@@ -92,11 +118,11 @@ class Distree_Demo(dst.Distree):
             msg = "This task already has children."
             raise NotImplementedError(msg)
 
-        t_0 = min(state_paths)
         prev_checkpoint = max(state_paths)
         t = prev_checkpoint  # The current time in the evolution.
         state_path = state_paths[t]
         state = self.load_state(state_path)
+        prev_branching_time = min(state_path)
 
         try:
             prev_measurement_time = max(measurements)
@@ -106,6 +132,10 @@ class Distree_Demo(dst.Distree):
         while t < taskdata["t_max"]:
             state, t_increment = self.evolve_state(state, taskdata)
             t += t_increment
+            # Many times increments are multiples of powers of ten, but adding
+            # them up incurs small floating point errors. We counter this by
+            # rounding. It keeps the logs and filenames prettier.
+            t = np.around(t, decimals=13)
 
             if t - prev_measurement_time >= taskdata["measurement_frequency"]:
                 data_entry = self.measure_data(state, taskdata)
@@ -116,9 +146,12 @@ class Distree_Demo(dst.Distree):
                 state_paths[t] = self.store_state(state, t=t, task_id=task_id)
                 prev_checkpoint = t
 
-            if self.should_branch(state, t, t_0, taskdata):
-                taskdata = self.branch(state, t, taskdata, task_id)
-                break
+            if self.should_branch(state, t, prev_branching_time, taskdata):
+                did_branch = self.branch(state, t, taskdata, task_id)
+                if did_branch:
+                    break
+                else:
+                    prev_branching_time = t
 
         # Always store the state at the end of the simulation.
         # TODO Fix the fact that this gets run even if t > t_max from the
@@ -131,20 +164,19 @@ class Distree_Demo(dst.Distree):
         self.save_task_data(taskdata_path, taskdata, task_id, parent_id) 
 
     def branch(self, state, t, taskdata, task_id):
+        # Try to branch.
+        branch_pars = self.yaml_load(taskdata["branch_pars_path"])
+        children, coeffs = find_branches(state, branch_pars)
+        num_children = len(children)
+
+        if num_children < 2:
+            # No branching happened.
+            return False
+
+        taskdata['num_children'] = num_children
         parent_treepath = taskdata['parent_treepath']
         branch_num = taskdata["branch_num"]
         treepath = self.branch_treepath(parent_treepath, branch_num)
-
-        # TODO Do actual branching of MPSes.
-        if state % 2 == 0:
-            children = [state/2-1, state/2+1]
-            coeffs = [0.7, 0.3]
-        else:
-            children = [state]
-            coeffs = [1.0]
-
-        num_children = len(children)
-        taskdata['num_children'] = 2
 
         # Create taskdata files for, and schedule, children
         for i, (child, child_coeff) in enumerate(zip(children, coeffs)):
@@ -159,7 +191,10 @@ class Distree_Demo(dst.Distree):
                 'state_paths': {t: child_state_path},
                 'coeff': child_coeff*taskdata["coeff"], 
                 'measurement_frequency': taskdata["measurement_frequency"],
-                'checkpoint_frequency': taskdata["checkpoint_frequency"]
+                'checkpoint_frequency': taskdata["checkpoint_frequency"],
+                'initial_pars_path': taskdata["initial_pars_path"],
+                'time_evo_pars_path': taskdata["time_evo_pars_path"],
+                'branch_pars_path': taskdata["branch_pars_path"]
             }
 
             # This will add each child task to the log, and schedule them to be
@@ -168,7 +203,7 @@ class Distree_Demo(dst.Distree):
                 task_id, child_taskdata, task_id=child_id
             )
             # NOTE: We could add more child info to the parent taskdata here
-        return taskdata
+        return True
 
 # End of custom Distree subclass #
 
@@ -248,14 +283,52 @@ def setup_logging():
 def parse_args():
     # Parse command line arguments.
     parser = argparse.ArgumentParser()
-    parser.add_argument('taskfile', type=str, nargs="?", default="",
-                        help='an integer for the accumulator')
+    parser.add_argument('taskfile', type=str, nargs="?", default="")
     parser.add_argument('--child', dest='child', default=False,
                         action='store_true')
     parser.add_argument('--show', dest='show', default=False,
                         action='store_true')
     args = parser.parse_args()
     return args
+
+
+def bloch_state(theta,phi):
+    return [sp.cos(theta/2)+0j, sp.sin(theta/2)*sp.exp(1j*phi)]
+
+
+def initial_state(pars):
+    hamiltonian = pars["hamiltonian"]  # Name of the model
+    qn = pars["qn"]      # Local state space dimension
+    N = pars["N"]    # System size
+    bond_dim = pars["bond_dim"]  # Bond dimension
+    zero_tol = pars["zero_tol"]  # Tolerance in evoMPS
+    sanity_checks = pars["sanity_checks"]  # Sanity checks in evoMPS
+    auto_truncate = pars["auto_truncate"]  # Automatic truncation in evoMPS
+    th1 = pars["theta1"]  # Angle for the initial state
+    phi1 = pars["phi1"]   # Angle for the initial state
+    th2 = pars["theta2"]  # Angle for the initial state
+    phi2 = pars["phi2"]   # Angle for the initial state
+
+    if hamiltonian.strip().lower() == "double_heisenberg_ising":
+        chi = pars["chi"]
+        omega = pars["omega"]
+        stiffness = pars["stiffness"]
+        J = -N*stiffness
+        Ham = matica.ham_heisenberg_ising(J, omega, chi, N)
+    else:
+        msg = "Unknown Hamiltonian: {}".format(hamiltonian)
+        raise NotImplementedError(msg)
+    D = [bond_dim]*(N+1)
+    q = [qn]*(N+1)
+    s = tdvp.EvoMPS_TDVP_Generic(N, D, q, Ham)
+    s.zero_tol = zero_tol
+    s.sanity_checks = sanity_checks
+
+    # "InitCondC" (ZY): Comfirmed ZY trajectory chaotic in Mathematica with chi = 2
+    init_state = sp.kron(bloch_state(th1, phi1), bloch_state(th2, phi2))
+    s.set_state_product([init_state]*N)
+    s.update(auto_truncate=auto_truncate)
+    return s
 
 
 if __name__ == "__main__":
@@ -290,22 +363,19 @@ if __name__ == "__main__":
         # Assume the argument is a taskdata file to be used for a root job
         dtree.schedule_task_from_file(args.taskfile)
     else:
-        # Create the initial MPS.
-        root_state = np.array([0.0])
-        root_task_id = dtree.sched.get_id()
-        root_state_path = dtree.store_state(
-            root_state, t=0., task_id=root_task_id
-        )
         # Save a simple initial taskdata file and schedule a root job.
-        init_task_data = {'parent_id': None, 
-                          'parent_treepath': '',
-                          'branch_num': 0, 
-                          't_max': 7, 
-                          'state_paths': {0.: root_state_path},
-                          'coeff': 1.0,
-                          'measurement_frequency': 2,
-                          'checkpoint_frequency': 4
-                          }
+        init_task_data = {
+            'parent_id': None, 
+            'parent_treepath': '',
+            'branch_num': 0, 
+            't_max': 7, 
+            'coeff': 1.0,
+            'measurement_frequency': 2,
+            'checkpoint_frequency': 4,
+            'initial_pars_path': 'confs/initial_pars.yaml',
+            'time_evo_pars_path': 'confs/time_evo_pars.yaml',
+            'branch_pars_path': 'confs/branch_pars.yaml'
+        }
         # The following schedules a job (it will be run in a different process)
-        dtree.schedule_task(None, init_task_data, task_id=root_task_id)
+        dtree.schedule_task(None, init_task_data)
 
