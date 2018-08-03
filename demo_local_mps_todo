@@ -1,0 +1,16 @@
+Store measurements in a single text or hdf5 file. Look at heisenberg_ZY-9.py and matica.py for how Jess does things and what he stores, adapt from there.
+
+Probably add an additional yaml parameter file for parameters related to data taking.
+
+Consider reorganizing the directory structure. Maybe move all MPS stuff into a subfolder.
+
+Consider reorganizing module structure. At the moment, demo_local_mps.py includes Distree stuff and MPS stuff mixed, plus a script at the end with if __name__ == "main". Maybe some of these things should be separated to different modules. There's also some redundacy in the function calls for branching and time-evolution, where for instance Distree_Demo.branch calls find_branch.find_branch, which in turn calls mps_ext.find_branch. The last one was written by Dan, and I haven't modified it. There's a similar stack of calls for time-evolution. These could be streamlined.
+
+Many functions are a little questionable whether they should be @staticmethods of Distree_Demo or global functions in the same module. Decide on a convention and be consistent, now it's a bit of a mess. Relates to the above point.
+
+Should we cleanup all the MPS files? At the moment I've purposefully left the following files untouched:
+matica.py
+MPO_tebd.py
+mps_ext.py
+SpinLanguageSparse.py
+They could be cleaned up, some of them merged, etc., but of course then Jess/Dan/Curt wouldn't find them as easy to edit, and you couldn't just replace them with new versions from them. I don't know how much they care about this.
