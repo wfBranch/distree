@@ -44,7 +44,7 @@ class Distree_Demo(dst.Distree):
         self.dump_yaml(data, taskdata_path)
 
     def load_task_data(self, taskdata_path):
-        taskdata = self.yaml_load(taskdata_path)
+        taskdata = self.load_yaml(taskdata_path)
         task_id = taskdata.get("task_id", None)
         parent_id = taskdata.get("parent_id", None)
         return taskdata, task_id, parent_id
@@ -85,7 +85,7 @@ class Distree_Demo(dst.Distree):
         return t > 2 and t - prev_branching_time > 0.5
 
     def evolve_state(self, state, taskdata):
-        pars = self.yaml_load(taskdata["time_evo_pars_path"])
+        pars = self.load_yaml(taskdata["time_evo_pars_path"])
         state, time_increment = evolve_mps(state, pars)
         return state, time_increment
 
@@ -105,7 +105,7 @@ class Distree_Demo(dst.Distree):
         # Check if the dictionary of states at different times is empty.
         if not state_paths:
             logging.info("The task {} has no states in it, so we initialize.")
-            initial_pars = self.yaml_load(taskdata["initial_pars_path"])
+            initial_pars = self.load_yaml(taskdata["initial_pars_path"])
             s = initial_state(initial_pars)
             s_path = dtree.store_state(s, t=0.0, task_id=task_id)
             state_paths[0.0] = s_path
@@ -122,7 +122,7 @@ class Distree_Demo(dst.Distree):
         t = prev_checkpoint  # The current time in the evolution.
         state_path = state_paths[t]
         state = self.load_state(state_path)
-        prev_branching_time = min(state_path)
+        prev_branching_time = min(state_paths)
 
         try:
             prev_measurement_time = max(measurements)
@@ -165,7 +165,7 @@ class Distree_Demo(dst.Distree):
 
     def branch(self, state, t, taskdata, task_id):
         # Try to branch.
-        branch_pars = self.yaml_load(taskdata["branch_pars_path"])
+        branch_pars = self.load_yaml(taskdata["branch_pars_path"])
         children, coeffs = find_branches(state, branch_pars)
         num_children = len(children)
 
