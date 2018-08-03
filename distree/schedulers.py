@@ -12,6 +12,7 @@ import numpy as np
 import subprocess
 import uuid
 import sys
+import logging
 
 class Sched():
     def get_id(self):
@@ -40,7 +41,8 @@ class Sched_Local_SameProc(Sched):
 
 
 class Sched_Local(Sched):
-    def __init__(self, scriptpath, scriptargs=[], python_command=sys.executable):
+    def __init__(self, scriptpath, scriptargs=[],
+                 python_command=sys.executable):
         self.scriptpath = scriptpath
         self.scriptargs = scriptargs
         self.python_command = python_command
@@ -49,6 +51,7 @@ class Sched_Local(Sched):
         return uuid.uuid1()
 
     def schedule_task(self, taskdata_path):
-        args = [self.python_command, self.scriptpath, taskdata_path] + self.scriptargs
-        print('Running: ', args)
+        args = ([self.python_command, self.scriptpath, taskdata_path]
+                + self.scriptargs)
+        logging.info('Running: {}'.format(args))
         subprocess.Popen(args)
