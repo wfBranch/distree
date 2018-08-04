@@ -14,3 +14,7 @@ MPO_tebd.py
 mps_ext.py
 SpinLanguageSparse.py
 They could be cleaned up, some of them merged, etc., but of course then Jess/Dan/Curt wouldn't find them as easy to edit, and you couldn't just replace them with new versions from them. I don't know how much they care about this.
+
+Instead of pickling an evoMPS object, store the tensors as .npy.
+
+Add a basepath for everything.

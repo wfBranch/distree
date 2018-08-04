@@ -21,6 +21,7 @@ import argparse
 import matica
 import evoMPS.tdvp_gen as tdvp
 import pickle
+import h5py
 from evolve import evolve_mps
 from find_branches import find_branches
 
@@ -53,23 +54,121 @@ class Distree_Demo(dst.Distree):
     def branch_treepath(parent_treepath, branch_num):
         return parent_treepath + '/%u' % branch_num
 
-    @staticmethod
-    def measure_data(state, taskdata):
-        # TODO Actually measure meaningful things about an MPS.
-        # Squares of the Schmidt coefficients across the bond in the middle of
-        # the lattice.
-        data = list(state.schmidt_sq(int(state.N/2)).real) 
-        return data
+    def get_measurement_path(self, task_id):
+        path = "{}{}.h5".format(self.data_path, task_id)
+        return path
 
     @staticmethod
-    def generate_state_filename(task_id, t):
-        filename = "{}_t{}.p".format(task_id, t)
-        return filename
+    def get_last_measurement_time(taskdata):
+        measurement_path = taskdata["measurement_path"]
+        with h5py.File(measurement_path, "r") as h5file:
+            try:
+                last_time = max(h5file["t"])
+            except ValueError:
+                # Couldn't take max, because the dataset was empty.
+                last_time = -np.inf
+        return last_time
 
-    def store_state(self, state, filename=None, **kwargs):
-        if not filename:
-            filename = self.generate_state_filename(**kwargs)
-        path = self.data_path + filename
+    def initialize_measurement_data(self, taskdata):
+        measurement_path = taskdata["measurement_path"]
+        initial_pars = self.load_yaml(taskdata["initial_pars_path"])
+        N = initial_pars["N"]
+        bond_dim = initial_pars["bond_dim"]
+        with h5py.File(measurement_path, "a") as h5file:
+            # Time
+            h5file.create_dataset("t", (0,), maxshape=(None,), dtype=np.float_)
+            # Energy
+            h5file.create_dataset("H", (0,), maxshape=(None,), dtype=np.float_)
+            # Energy with respect to Heisenberg Hamiltonian
+            h5file.create_dataset(
+                "H_Heis", (0,), maxshape=(None,), dtype=np.float_
+            )
+            # Expectation values of spin operatorstate.
+            mags = len(matica.mag_ops)
+            h5file.create_dataset(
+                "mag", (0, N, mags), maxshape=(None, N, mags), dtype=np.float_
+            )
+            # Entropy between left half (sites 1 through n) and right half
+            # (sites n+1 though N)
+            h5file.create_dataset(
+                "bond_entropies", (0, N-1), maxshape=(None, N-1),
+                dtype=np.float_
+            )
+            # Squares of the Schmidt coefficients across the bond at the center
+            # of the middle of the lattice
+            h5file.create_dataset(
+                "middle_schmidt_sqs", (0, bond_dim), maxshape=(None, bond_dim),
+                dtype=np.float_
+            )
+            # Squares of the Schmidt coefficients across the bond at the center
+            # of the middle of the lattice
+            h5file.create_dataset(
+                "all_schmidt", (0, bond_dim, N+1),
+                maxshape=(None, bond_dim, N+1), dtype=np.float_
+            )
+
+    @staticmethod
+    def measure_data(state, t, taskdata):
+        # TODO Would be nice to have another set of parameters in taskdata,
+        # that specifies what kind of data is stored, instead of this hardcoded
+        # stuff. Consider putting them in a measurement_pars.yaml file.
+        measurement_path = taskdata["measurement_path"]
+        N = state.N
+        bond_dim = max(state.D)
+        with h5py.File(measurement_path, "a") as h5file:
+            # Time
+            ts = h5file["t"]
+            ts.resize(ts.shape[0]+1, axis=0)
+            ts[-1] = t
+            # Energy
+            Hs = h5file["H"]
+            Hs.resize(Hs.shape[0]+1, axis=0)
+            val = sp.sum([state.expect_2s(state.ham[n], n)
+                          for n in range(1, N)]).real
+            Hs[-1] = val
+            # Energy with respect to Heisenberg Hamiltonian
+            H_Heiss = h5file["H_Heis"]
+            H_Heiss.resize(H_Heiss.shape[0]+1, axis=0)
+            val = sp.sum([state.expect_2s(state.hamDH[n], n)
+                          for n in range(1,N)]).real
+            H_Heiss[-1] = val
+            # Expectation values of spin operatorstate.
+            mags = h5file["mag"]
+            mags.resize(mags.shape[0]+1, axis=0)
+            val = [[state.expect_1s(ST, n).real for ST in matica.mag_ops]
+                   for n in range(1, N+1)]
+            mags[-1,:,:] = val
+            # Entropy between left half (sites 1 through n) and right half
+            # (sites n+1 though N)
+            bond_entropiess = h5file["bond_entropies"]
+            bond_entropiess.resize(bond_entropiess.shape[0]+1, axis=0)
+            val = [state.entropy(n) for n in range(1, N)]
+            bond_entropiess[-1,:] = val
+            # Squares of the Schmidt coefficients across the bond at the center
+            # of the middle of the lattice
+            middle_schmidt_sqss = h5file["middle_schmidt_sqs"]
+            middle_schmidt_sqss.resize(middle_schmidt_sqss.shape[0]+1,
+                                       axis=0)
+            val = np.zeros((bond_dim,), dtype=np.float_)
+            coeffs = state.schmidt_sq(int(N/2)).real
+            val[:len(coeffs)] = coeffs
+            middle_schmidt_sqss[-1,:] = val
+            # Squares of the Schmidt coefficients across the bond at the center
+            # of the middle of the lattice
+            all_schmidts = h5file["all_schmidt"]
+            all_schmidts.resize(all_schmidts.shape[0]+1, axis=0)
+            val = np.zeros((bond_dim, N+1), dtype=np.float_)
+            for n in range(N+1):
+                coeffs = sp.sqrt(state.schmidt_sq(n).real).real
+                val[:len(coeffs), n] = coeffs
+            all_schmidts[-1,:,:] = val
+
+    def get_state_path(self, task_id, t):
+        path = "{}{}_t{}.p".format(self.data_path, task_id, t)
+        return path
+
+    def store_state(self, state, **kwargs):
+        path = self.get_state_path(**kwargs)
         with open(path, "wb") as f:
             pickle.dump(state, f)
         return path
@@ -82,7 +181,7 @@ class Distree_Demo(dst.Distree):
     def should_branch(self, state, t, prev_branching_time, taskdata):
         # TODO This should be replaced with some more sophisticated check of
         # when to branch, based also on properties of the state.
-        return t > 2 and t - prev_branching_time > 0.5
+        return t > 2 and t - prev_branching_time > 1
 
     def evolve_state(self, state, taskdata):
         pars = self.load_yaml(taskdata["time_evo_pars_path"])
@@ -95,12 +194,7 @@ class Distree_Demo(dst.Distree):
         # It also contains the task_id, generated by the scheduler when the
         # task was scheduled, and the parent_id, which may be `None`.
         taskdata, task_id, parent_id = self.load_task_data(taskdata_path)
-
-        # Put some data into local variables for convenience
         state_paths = taskdata.get("state_paths", {})
-        # TODO Change the value of measurements to not be a dictionary, but
-        # perhaps a path to a single data file, maybe in HDF5 or in plaintext.
-        measurements = taskdata.get("measurements", {})
 
         # Check if the dictionary of states at different times is empty.
         if not state_paths:
@@ -111,6 +205,16 @@ class Distree_Demo(dst.Distree):
             state_paths[0.0] = s_path
             taskdata["state_paths"] = state_paths
 
+        # Check if there already is a file for storing measurements for the
+        # state. If not, create it.
+        if ("measurement_path" not in taskdata
+                or not taskdata["measurement_path"]):
+            measurement_path = self.get_measurement_path(task_id)
+            taskdata["measurement_path"] = measurement_path
+            self.initialize_measurement_data(taskdata)
+
+        # Check if the job already has been run to a point where it has
+        # branched.
         has_children = "children" in taskdata and taskdata["children"]
         if has_children:
             # TODO Decide what to do here. Maybe ask the user to set some
@@ -123,11 +227,7 @@ class Distree_Demo(dst.Distree):
         state_path = state_paths[t]
         state = self.load_state(state_path)
         prev_branching_time = min(state_paths)
-
-        try:
-            prev_measurement_time = max(measurements)
-        except ValueError:
-            prev_measurement_time = -np.inf
+        prev_measurement_time = self.get_last_measurement_time(taskdata)
 
         while t < taskdata["t_max"]:
             state, t_increment = self.evolve_state(state, taskdata)
@@ -138,8 +238,7 @@ class Distree_Demo(dst.Distree):
             t = np.around(t, decimals=13)
 
             if t - prev_measurement_time >= taskdata["measurement_frequency"]:
-                data_entry = self.measure_data(state, taskdata)
-                measurements[t] = data_entry
+                self.measure_data(state, t, taskdata)
                 prev_measurement_time = t
 
             if t - prev_checkpoint >= taskdata["checkpoint_frequency"]:
@@ -298,33 +397,46 @@ def bloch_state(theta,phi):
 
 def initial_state(pars):
     hamiltonian = pars["hamiltonian"]  # Name of the model
-    qn = pars["qn"]      # Local state space dimension
+    qn = pars["qn"]  # Local state space dimension
     N = pars["N"]    # System size
     bond_dim = pars["bond_dim"]  # Bond dimension
     zero_tol = pars["zero_tol"]  # Tolerance in evoMPS
     sanity_checks = pars["sanity_checks"]  # Sanity checks in evoMPS
     auto_truncate = pars["auto_truncate"]  # Automatic truncation in evoMPS
-    th1 = pars["theta1"]  # Angle for the initial state
-    phi1 = pars["phi1"]   # Angle for the initial state
-    th2 = pars["theta2"]  # Angle for the initial state
-    phi2 = pars["phi2"]   # Angle for the initial state
+    th1  = pars["theta1"]  # Angle for the initial state
+    phi1 = pars["phi1"]    # Angle for the initial state
+    th2  = pars["theta2"]  # Angle for the initial state
+    phi2 = pars["phi2"]    # Angle for the initial state
 
     if hamiltonian.strip().lower() == "double_heisenberg_ising":
         chi = pars["chi"]
         omega = pars["omega"]
         stiffness = pars["stiffness"]
         J = -N*stiffness
-        Ham = matica.ham_heisenberg_ising(J, omega, chi, N)
+        # Three Hamiltonians:
+        # The double Heisengberg chain,
+        hamDH = matica.ham_heisenberg_ising(J, 0, 0, N)
+        # the transverse-field Ising between the chains,
+        hamTVI = matica.ham_heisenberg_ising(0, omega, chi, N)
+        # and the total Hamiltonian that is their sum.
+        ham = matica.ham_heisenberg_ising(J, omega, chi, N)
     else:
         msg = "Unknown Hamiltonian: {}".format(hamiltonian)
         raise NotImplementedError(msg)
     D = [bond_dim]*(N+1)
     q = [qn]*(N+1)
-    s = tdvp.EvoMPS_TDVP_Generic(N, D, q, Ham)
+    s = tdvp.EvoMPS_TDVP_Generic(N, D, q, ham)
     s.zero_tol = zero_tol
     s.sanity_checks = sanity_checks
+    # We also add hamDH and hamTVI as fields of s.
+    # This is quite dirty, but handy when doing measurements.
+    # The only real risk is naming conflicts with parts of the evoMPS class,
+    # but that's not gonna happen, right? TODO Come up with a better solution.
+    s.hamDH = hamDH
+    s.hamTVI = hamTVI
 
-    # "InitCondC" (ZY): Comfirmed ZY trajectory chaotic in Mathematica with chi = 2
+    # "InitCondC" (ZY):
+    # Comfirmed ZY trajectory chaotic in Mathematica with chi = 2
     init_state = sp.kron(bloch_state(th1, phi1), bloch_state(th2, phi2))
     s.set_state_product([init_state]*N)
     s.update(auto_truncate=auto_truncate)
@@ -340,13 +452,13 @@ if __name__ == "__main__":
     setup_logging()
     # This log file keeps track of the tree.
     logfile = "./log/distreelog.txt"
-    datafolder = "./data/"
+    data_path = "./data/"
     # Create a scheduler and tell it what script to run to schedule tasks.
     sched = SL.Sched_Local(sys.argv[0], scriptargs=['--child'])
 
     # Create the tree object, telling it where the logfile lives, where the
     # taskdata files are to be stored, and giving it the scheduler to use.
-    dtree = Distree_Demo(logfile, datafolder, sched)
+    dtree = Distree_Demo(logfile, data_path, sched)
 
     # NOTE: This script is designed so that it can schedule the root job and
     # also child jobs, depending on the supplied command-line arguments.
