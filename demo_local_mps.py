@@ -112,6 +112,9 @@ class Distree_Demo(dst.Distree):
         # TODO Would be nice to have another set of parameters in taskdata,
         # that specifies what kind of data is stored, instead of this hardcoded
         # stuff. Consider putting them in a measurement_pars.yaml file.
+        # TODO Also, I bet resizing the datasets everytime we do measurements
+        # is not the best for performance. Don't know how much it matters
+        # though.
         measurement_path = taskdata["measurement_path"]
         N = state.N
         bond_dim = max(state.D)

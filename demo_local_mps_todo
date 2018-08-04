@@ -1,5 +1,3 @@
-Store measurements in a single text or hdf5 file. Look at heisenberg_ZY-9.py and matica.py for how Jess does things and what he stores, adapt from there.
-
 Probably add an additional yaml parameter file for parameters related to data taking.
 
 Consider reorganizing the directory structure. Maybe move all MPS stuff into a subfolder.
