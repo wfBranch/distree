@@ -20,10 +20,10 @@ from shlex import quote
 
 class Sched():
     def get_id(self):
-        return None
+        raise NotImplementedError
 
     def schedule_task(self, taskdata_path):
-        pass
+        raise NotImplementedError
 
 class Sched_Local_SameProc(Sched):
     task_list = []

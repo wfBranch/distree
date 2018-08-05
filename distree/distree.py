@@ -65,7 +65,7 @@ class Distree():
     Specifies how the taskdata filename is derived from the task_id.
     """
     def get_taskdata_path(self, task_id):
-        assert False, "Example implementation!"
+        raise NotImplementedError
         return os.path.join(self.data_path, '%s.npy' % task_id)
 
     """
@@ -73,7 +73,7 @@ class Distree():
     the task_id and the parent_id. Otherwise it's up to the implementor.
     """
     def save_task_data(self, taskdata_path, data, task_id, parent_id):
-        assert False, "Example implementation!"
+        raise NotImplementedError
         f = open(taskdata_path, "w")
         f.write('%s\t%s\n' % (task_id, parent_id))
         f.close()
@@ -83,7 +83,7 @@ class Distree():
     and return them separately.
     """
     def load_task_data(self, taskdata_path):
-        assert False, "Example implementation!"
+        raise NotImplementedError
         f = open(taskdata_path, "r")
         task_id, parent_id = f[0].split()
         f.close()
@@ -94,4 +94,4 @@ class Distree():
     This is where the actual content goes! Actually run a task.
     """
     def run_task(self, taskdata_path):
-        pass
+        raise NotImplementedError
