@@ -25,6 +25,120 @@ import h5py
 from evolve import evolve_mps
 from find_branches import find_branches
 
+class Meas():
+    def __init__(self, N, Dmax):
+        self.N = N
+        self.Dmax = Dmax
+        self.buf = []
+
+    def get_shape(self):
+        raise NotImplementedError
+
+    def get_dtype(self):
+        raise NotImplementedError
+
+    def measure(self, state, t):
+        raise NotImplementedError
+
+    def measure_to_buffer(self, state, t):
+        self.buf.append(self.measure(state, t))
+
+    def get_buffer(self):
+        return self.buf
+
+    def clear_buffer(self):
+        self.buf = []
+
+class MeasTime(Meas):
+    def get_shape(self):
+        return ()
+
+    def get_dtype(self):
+        return np.float_
+
+    def measure(self, state, t):
+        return t
+
+# Expectation values of spin operatorstate.
+class MeasMag(Meas):
+    def get_shape(self):
+        return (self.N, len(matica.mag_ops))
+
+    def get_dtype(self):
+        return np.float_
+
+    def measure(self, state, t):
+        return [[state.expect_1s(ST, n).real for ST in matica.mag_ops]
+                   for n in range(1, state.N+1)]
+
+# Energy
+class MeasH(Meas):
+    def get_shape(self):
+        return ()
+
+    def get_dtype(self):
+        return np.float_
+
+    def measure(self, state, t):
+        #return sp.sum([state.expect_2s(state.ham[n], n)
+        #                  for n in range(1, state.N)]).real
+        return state.H_expect.real
+
+# Energy with respect to Heisenberg Hamiltonian
+class MeasHheis(Meas):
+    def get_shape(self):
+        return ()
+
+    def get_dtype(self):
+        return np.float_
+
+    def measure(self, state, t):
+        return sp.sum([state.expect_2s(state.hamDH[n], n)
+                          for n in range(1,state.N)]).real
+
+# Entropy between left half (sites 1 through n) and right half
+# (sites n+1 though N)
+class MeasEntropies(Meas):
+    def get_shape(self):
+        return (self.N-1,)
+
+    def get_dtype(self):
+        return np.float_
+
+    def measure(self, state, t):
+        return [state.entropy(n) for n in range(1, state.N)]
+
+# Squares of the Schmidt coefficients across the bond at the center
+# of the middle of the lattice
+class MeasSchmidtsMid(Meas):
+    def get_shape(self):
+        return (self.Dmax,)
+
+    def get_dtype(self):
+        return np.float_
+
+    def measure(self, state, t):
+        val = np.zeros((self.Dmax,), dtype=np.float_)
+        coeffs = state.schmidt_sq(int(state.N/2)).real
+        val[:len(coeffs)] = coeffs
+        return val
+
+# Squares of the Schmidt coefficients across all the bonds
+class MeasSchmidts(Meas):
+    def get_shape(self):
+        return (self.Dmax, self.N+1)
+
+    def get_dtype(self):
+        return np.float_
+
+    def measure(self, state, t):
+        val = np.zeros((self.Dmax, self.N+1), dtype=np.float_)
+        for n in range(self.N+1):
+            coeffs = sp.sqrt(state.schmidt_sq(n).real).real
+            val[:len(coeffs), n] = coeffs
+        return val
+
+
 class Distree_Demo(dst.Distree):
     @staticmethod
     def dump_yaml(data, path):
@@ -38,7 +152,7 @@ class Distree_Demo(dst.Distree):
         return data
 
     def get_taskdata_path(self, task_id):
-        return self.data_path + '%s.yaml' % task_id
+        return os.path.join(self.data_path, '%s.yaml' % task_id)
 
     def save_task_data(self, taskdata_path, data, task_id, parent_id):
         data.update(task_id=task_id, parent_id=parent_id)
@@ -55,7 +169,7 @@ class Distree_Demo(dst.Distree):
         return parent_treepath + '/%u' % branch_num
 
     def get_measurement_path(self, task_id):
-        path = "{}{}.h5".format(self.data_path, task_id)
+        path = os.path.join(self.data_path,"{}.h5".format(task_id))
         return path
 
     @staticmethod
@@ -69,105 +183,51 @@ class Distree_Demo(dst.Distree):
                 last_time = -np.inf
         return last_time
 
-    def initialize_measurement_data(self, taskdata):
+    def initialize_measurements(self, taskdata):
+        # TODO Would be nice to have another set of parameters in taskdata,
+        # that specifies what measurements to do, instead of this hardcoded
+        # stuff. Consider putting them in a measurement_pars.yaml file.
+        initial_pars = self.load_yaml(taskdata["initial_pars_path"])
+        N = initial_pars["N"]
+        Dmax = initial_pars["bond_dim"]
+        return {'t': MeasTime(N, Dmax),
+                'H': MeasH(N, Dmax),
+                'H_Heis': MeasHheis(N, Dmax),
+                'mag': MeasMag(N, Dmax),
+                'bond_entropies': MeasEntropies(N, Dmax),
+                'middle_schmidt_sqs': MeasSchmidtsMid(N, Dmax),
+                'all_schmidt': MeasSchmidts(N, Dmax)}
+
+    def initialize_measurement_data(self, taskdata, meas):
         measurement_path = taskdata["measurement_path"]
         initial_pars = self.load_yaml(taskdata["initial_pars_path"])
         N = initial_pars["N"]
         bond_dim = initial_pars["bond_dim"]
         with h5py.File(measurement_path, "a") as h5file:
-            # Time
-            h5file.create_dataset("t", (0,), maxshape=(None,), dtype=np.float_)
-            # Energy
-            h5file.create_dataset("H", (0,), maxshape=(None,), dtype=np.float_)
-            # Energy with respect to Heisenberg Hamiltonian
-            h5file.create_dataset(
-                "H_Heis", (0,), maxshape=(None,), dtype=np.float_
-            )
-            # Expectation values of spin operatorstate.
-            mags = len(matica.mag_ops)
-            h5file.create_dataset(
-                "mag", (0, N, mags), maxshape=(None, N, mags), dtype=np.float_
-            )
-            # Entropy between left half (sites 1 through n) and right half
-            # (sites n+1 though N)
-            h5file.create_dataset(
-                "bond_entropies", (0, N-1), maxshape=(None, N-1),
-                dtype=np.float_
-            )
-            # Squares of the Schmidt coefficients across the bond at the center
-            # of the middle of the lattice
-            h5file.create_dataset(
-                "middle_schmidt_sqs", (0, bond_dim), maxshape=(None, bond_dim),
-                dtype=np.float_
-            )
-            # Squares of the Schmidt coefficients across the bond at the center
-            # of the middle of the lattice
-            h5file.create_dataset(
-                "all_schmidt", (0, bond_dim, N+1),
-                maxshape=(None, bond_dim, N+1), dtype=np.float_
-            )
+            for mname, m in meas.items():
+                shp = m.get_shape()
+                h5file.create_dataset(mname, (0,*shp), maxshape=(None,*shp), dtype=m.get_dtype())
 
     @staticmethod
-    def measure_data(state, t, taskdata):
-        # TODO Would be nice to have another set of parameters in taskdata,
-        # that specifies what kind of data is stored, instead of this hardcoded
-        # stuff. Consider putting them in a measurement_pars.yaml file.
-        # TODO Also, I bet resizing the datasets everytime we do measurements
-        # is not the best for performance. Don't know how much it matters
-        # though.
+    def measure_data(state, t, meas):
+        for mname, m in meas.items():
+            m.measure_to_buffer(state, t)
+
+    @staticmethod
+    def save_measurement_data(state, taskdata, meas):
         measurement_path = taskdata["measurement_path"]
-        N = state.N
-        bond_dim = max(state.D)
         with h5py.File(measurement_path, "a") as h5file:
-            # Time
-            ts = h5file["t"]
-            ts.resize(ts.shape[0]+1, axis=0)
-            ts[-1] = t
-            # Energy
-            Hs = h5file["H"]
-            Hs.resize(Hs.shape[0]+1, axis=0)
-            val = sp.sum([state.expect_2s(state.ham[n], n)
-                          for n in range(1, N)]).real
-            Hs[-1] = val
-            # Energy with respect to Heisenberg Hamiltonian
-            H_Heiss = h5file["H_Heis"]
-            H_Heiss.resize(H_Heiss.shape[0]+1, axis=0)
-            val = sp.sum([state.expect_2s(state.hamDH[n], n)
-                          for n in range(1,N)]).real
-            H_Heiss[-1] = val
-            # Expectation values of spin operatorstate.
-            mags = h5file["mag"]
-            mags.resize(mags.shape[0]+1, axis=0)
-            val = [[state.expect_1s(ST, n).real for ST in matica.mag_ops]
-                   for n in range(1, N+1)]
-            mags[-1,:,:] = val
-            # Entropy between left half (sites 1 through n) and right half
-            # (sites n+1 though N)
-            bond_entropiess = h5file["bond_entropies"]
-            bond_entropiess.resize(bond_entropiess.shape[0]+1, axis=0)
-            val = [state.entropy(n) for n in range(1, N)]
-            bond_entropiess[-1,:] = val
-            # Squares of the Schmidt coefficients across the bond at the center
-            # of the middle of the lattice
-            middle_schmidt_sqss = h5file["middle_schmidt_sqs"]
-            middle_schmidt_sqss.resize(middle_schmidt_sqss.shape[0]+1,
-                                       axis=0)
-            val = np.zeros((bond_dim,), dtype=np.float_)
-            coeffs = state.schmidt_sq(int(N/2)).real
-            val[:len(coeffs)] = coeffs
-            middle_schmidt_sqss[-1,:] = val
-            # Squares of the Schmidt coefficients across the bond at the center
-            # of the middle of the lattice
-            all_schmidts = h5file["all_schmidt"]
-            all_schmidts.resize(all_schmidts.shape[0]+1, axis=0)
-            val = np.zeros((bond_dim, N+1), dtype=np.float_)
-            for n in range(N+1):
-                coeffs = sp.sqrt(state.schmidt_sq(n).real).real
-                val[:len(coeffs), n] = coeffs
-            all_schmidts[-1,:,:] = val
+            for mname, m in meas.items():
+                dset = h5file[mname]
+                buf = m.get_buffer()
+                m.clear_buffer()
+                off = dset.shape[0]
+                dset.resize(off+len(buf), axis=0)
+                for j in range(len(buf)):
+                    dset[off + j, ...] = buf[j]
 
     def get_state_path(self, task_id, t):
-        path = "{}{}_t{}.p".format(self.data_path, task_id, t)
+        path = os.path.join(self.data_path, "{}_t{}.p".format(task_id, t))
         return path
 
     def store_state(self, state, **kwargs):
@@ -208,13 +268,16 @@ class Distree_Demo(dst.Distree):
             state_paths[0.0] = s_path
             taskdata["state_paths"] = state_paths
 
+        #Initialize the measurement objects
+        meas = self.initialize_measurements(taskdata)
+
         # Check if there already is a file for storing measurements for the
         # state. If not, create it.
         if ("measurement_path" not in taskdata
                 or not taskdata["measurement_path"]):
             measurement_path = self.get_measurement_path(task_id)
             taskdata["measurement_path"] = measurement_path
-            self.initialize_measurement_data(taskdata)
+            self.initialize_measurement_data(taskdata, meas)
 
         # Check if the job already has been run to a point where it has
         # branched.
@@ -241,11 +304,12 @@ class Distree_Demo(dst.Distree):
             t = np.around(t, decimals=13)
 
             if t - prev_measurement_time >= taskdata["measurement_frequency"]:
-                self.measure_data(state, t, taskdata)
+                self.measure_data(state, t, meas)
                 prev_measurement_time = t
 
             if t - prev_checkpoint >= taskdata["checkpoint_frequency"]:
                 state_paths[t] = self.store_state(state, t=t, task_id=task_id)
+                self.save_measurement_data(state, taskdata, meas)
                 prev_checkpoint = t
 
             if self.should_branch(state, t, prev_branching_time, taskdata):
@@ -259,6 +323,7 @@ class Distree_Demo(dst.Distree):
         # TODO Fix the fact that this gets run even if t > t_max from the
         # start.
         state_paths[t] = self.store_state(state, t=t, task_id=task_id)
+        self.save_measurement_data(state, taskdata, meas)
 
         # Save the final taskdata, overwriting the initial data file(s)
         # Note that the values in taskdata that have been modified, have been
@@ -493,4 +558,3 @@ if __name__ == "__main__":
         }
         # The following schedules a job (it will be run in a different process)
         dtree.schedule_task(None, init_task_data)
-
