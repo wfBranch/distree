@@ -84,7 +84,7 @@ class MeasH(Meas):
         #                  for n in range(1, state.N)]).real
         return state.H_expect.real
 
-# Energy with respect to a different Hamiltonian
+# Energy with respect to just part of the Hamiltonian
 class MeasHheis(Meas):
     def __init__(self, N, Dmax, pars):
         super().__init__(N, Dmax)
