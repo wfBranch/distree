@@ -37,11 +37,11 @@ class Meas():
     def get_dtype(self):
         raise NotImplementedError
 
-    def measure(self, state, t):
+    def measure(self, state, t, **kwargs):
         raise NotImplementedError
 
-    def measure_to_buffer(self, state, t):
-        self.buf.append(self.measure(state, t))
+    def measure_to_buffer(self, state, t, **kwargs):
+        self.buf.append(self.measure(state, t, **kwargs))
 
     def get_buffer(self):
         return self.buf
@@ -67,7 +67,7 @@ class MeasMag(Meas):
     def get_dtype(self):
         return np.float_
 
-    def measure(self, state, t):
+    def measure(self, state, t, **kwargs):
         return [[state.expect_1s(ST, n).real for ST in matica.mag_ops]
                    for n in range(1, state.N+1)]
 
@@ -79,21 +79,26 @@ class MeasH(Meas):
     def get_dtype(self):
         return np.float_
 
-    def measure(self, state, t):
+    def measure(self, state, t, **kwargs):
         #return sp.sum([state.expect_2s(state.ham[n], n)
         #                  for n in range(1, state.N)]).real
         return state.H_expect.real
 
-# Energy with respect to Heisenberg Hamiltonian
+# Energy with respect to a different Hamiltonian
 class MeasHheis(Meas):
+    def __init__(self, N, Dmax, pars):
+        super().__init__(N, Dmax)
+        hamDH, tamTVI = get_hamiltonian_decomp(pars)
+        self.ham = hamDH
+
     def get_shape(self):
         return ()
 
     def get_dtype(self):
         return np.float_
 
-    def measure(self, state, t):
-        return sp.sum([state.expect_2s(state.hamDH[n], n)
+    def measure(self, state, t, **kwargs):
+        return sp.sum([state.expect_2s(self.ham[n], n)
                           for n in range(1,state.N)]).real
 
 # Entropy between left half (sites 1 through n) and right half
@@ -105,7 +110,7 @@ class MeasEntropies(Meas):
     def get_dtype(self):
         return np.float_
 
-    def measure(self, state, t):
+    def measure(self, state, t, **kwargs):
         return [state.entropy(n) for n in range(1, state.N)]
 
 # Squares of the Schmidt coefficients across the bond at the center
@@ -117,7 +122,7 @@ class MeasSchmidtsMid(Meas):
     def get_dtype(self):
         return np.float_
 
-    def measure(self, state, t):
+    def measure(self, state, t, **kwargs):
         val = np.zeros((self.Dmax,), dtype=np.float_)
         coeffs = state.schmidt_sq(int(state.N/2)).real
         val[:len(coeffs)] = coeffs
@@ -131,7 +136,7 @@ class MeasSchmidts(Meas):
     def get_dtype(self):
         return np.float_
 
-    def measure(self, state, t):
+    def measure(self, state, t, **kwargs):
         val = np.zeros((self.Dmax, self.N+1), dtype=np.float_)
         for n in range(self.N+1):
             coeffs = sp.sqrt(state.schmidt_sq(n).real).real
@@ -192,7 +197,7 @@ class Distree_Demo(dst.Distree):
         Dmax = initial_pars["bond_dim"]
         return {'t': MeasTime(N, Dmax),
                 'H': MeasH(N, Dmax),
-                'H_Heis': MeasHheis(N, Dmax),
+                'H_Heis': MeasHheis(N, Dmax, initial_pars),
                 'mag': MeasMag(N, Dmax),
                 'bond_entropies': MeasEntropies(N, Dmax),
                 'middle_schmidt_sqs': MeasSchmidtsMid(N, Dmax),
@@ -200,9 +205,6 @@ class Distree_Demo(dst.Distree):
 
     def initialize_measurement_data(self, taskdata, meas):
         measurement_path = taskdata["measurement_path"]
-        initial_pars = self.load_yaml(taskdata["initial_pars_path"])
-        N = initial_pars["N"]
-        bond_dim = initial_pars["bond_dim"]
         with h5py.File(measurement_path, "a") as h5file:
             for mname, m in meas.items():
                 shp = m.get_shape()
@@ -263,7 +265,7 @@ class Distree_Demo(dst.Distree):
         if not state_paths:
             logging.info("The task {} has no states in it, so we initialize.")
             initial_pars = self.load_yaml(taskdata["initial_pars_path"])
-            s = initial_state(initial_pars)
+            s = initial_state(initial_pars, get_hamiltonian(initial_pars))
             s_path = dtree.store_state(s, t=0.0, task_id=task_id)
             state_paths[0.0] = s_path
             taskdata["state_paths"] = state_paths
@@ -463,8 +465,43 @@ def bloch_state(theta,phi):
     return [sp.cos(theta/2)+0j, sp.sin(theta/2)*sp.exp(1j*phi)]
 
 
-def initial_state(pars):
+def get_hamiltonian(pars):
+    N = pars["N"]    # System size
     hamiltonian = pars["hamiltonian"]  # Name of the model
+    if hamiltonian.strip().lower() == "double_heisenberg_ising":
+        chi = pars["chi"]
+        omega = pars["omega"]
+        stiffness = pars["stiffness"]
+        J = -N*stiffness
+        ham = matica.ham_heisenberg_ising(J, omega, chi, N)
+    else:
+        msg = "Unknown Hamiltonian: {}".format(hamiltonian)
+        raise NotImplementedError(msg)
+
+    return ham
+
+
+def get_hamiltonian_decomp(pars):
+    N = pars["N"]    # System size
+    hamiltonian = pars["hamiltonian"]  # Name of the model
+    if hamiltonian.strip().lower() == "double_heisenberg_ising":
+        chi = pars["chi"]
+        omega = pars["omega"]
+        stiffness = pars["stiffness"]
+        J = -N*stiffness
+        # The Hamiltonian is the sum of two parts:
+        # The double Heisengberg chain,
+        hamDH = matica.ham_heisenberg_ising(J, 0, 0, N)
+        # the transverse-field Ising between the chains.
+        hamTVI = matica.ham_heisenberg_ising(0, omega, chi, N)
+    else:
+        msg = "Unknown Hamiltonian: {}".format(hamiltonian)
+        raise NotImplementedError(msg)
+
+    return hamDH, hamTVI
+
+
+def initial_state(pars, ham):
     qn = pars["qn"]  # Local state space dimension
     N = pars["N"]    # System size
     bond_dim = pars["bond_dim"]  # Bond dimension
@@ -476,32 +513,11 @@ def initial_state(pars):
     th2  = pars["theta2"]  # Angle for the initial state
     phi2 = pars["phi2"]    # Angle for the initial state
 
-    if hamiltonian.strip().lower() == "double_heisenberg_ising":
-        chi = pars["chi"]
-        omega = pars["omega"]
-        stiffness = pars["stiffness"]
-        J = -N*stiffness
-        # Three Hamiltonians:
-        # The double Heisengberg chain,
-        hamDH = matica.ham_heisenberg_ising(J, 0, 0, N)
-        # the transverse-field Ising between the chains,
-        hamTVI = matica.ham_heisenberg_ising(0, omega, chi, N)
-        # and the total Hamiltonian that is their sum.
-        ham = matica.ham_heisenberg_ising(J, omega, chi, N)
-    else:
-        msg = "Unknown Hamiltonian: {}".format(hamiltonian)
-        raise NotImplementedError(msg)
     D = [bond_dim]*(N+1)
     q = [qn]*(N+1)
     s = tdvp.EvoMPS_TDVP_Generic(N, D, q, ham)
     s.zero_tol = zero_tol
     s.sanity_checks = sanity_checks
-    # We also add hamDH and hamTVI as fields of s.
-    # This is quite dirty, but handy when doing measurements.
-    # The only real risk is naming conflicts with parts of the evoMPS class,
-    # but that's not gonna happen, right? TODO Come up with a better solution.
-    s.hamDH = hamDH
-    s.hamTVI = hamTVI
 
     # "InitCondC" (ZY):
     # Comfirmed ZY trajectory chaotic in Mathematica with chi = 2
