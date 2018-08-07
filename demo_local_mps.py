@@ -297,6 +297,8 @@ class Distree_Demo(dst.Distree):
         prev_branching_time = min(state_paths)
         prev_measurement_time = self.get_last_measurement_time(taskdata)
 
+        logging.info("Starting the time evolution loop for task {}."
+                     .format(task_id))
         while t < taskdata["t_max"]:
             state, t_increment = self.evolve_state(state, taskdata)
             t += t_increment
@@ -304,21 +306,27 @@ class Distree_Demo(dst.Distree):
             # them up incurs small floating point errors. We counter this by
             # rounding. It keeps the logs and filenames prettier.
             t = np.around(t, decimals=13)
+            logging.info("Task {} at t={}.".format(task_id, t))
 
             if t - prev_measurement_time >= taskdata["measurement_frequency"]:
+                logging.info("Task {} measuring.".format(task_id))
                 self.measure_data(state, t, meas)
                 prev_measurement_time = t
 
             if t - prev_checkpoint >= taskdata["checkpoint_frequency"]:
+                logging.info("Task {} checkpointing.".format(task_id))
                 state_paths[t] = self.store_state(state, t=t, task_id=task_id)
                 self.save_measurement_data(state, taskdata, meas)
                 prev_checkpoint = t
 
             if self.should_branch(state, t, prev_branching_time, taskdata):
+                logging.info("Task {} branching.".format(task_id))
                 did_branch = self.branch(state, t, taskdata, task_id)
                 if did_branch:
+                    logging.info("Task {}, branches found.".format(task_id))
                     break
                 else:
+                    logging.info("Task {}, no branches found.".format(task_id))
                     prev_branching_time = t
 
         # Always store the state at the end of the simulation.
@@ -331,6 +339,7 @@ class Distree_Demo(dst.Distree):
         # Note that the values in taskdata that have been modified, have been
         # modified in place.
         self.save_task_data(taskdata_path, taskdata, task_id, parent_id) 
+        logging.info("Task {} done.".format(task_id))
 
     def branch(self, state, t, taskdata, task_id):
         # Try to branch.
@@ -420,6 +429,9 @@ def setup_logging():
     # First get the logger and set the level to INFO
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
+    # Get the handler for stdout.
+    consolehandler = logger.handlers[0]
+    consolehandler.setLevel(logging.INFO)
     # Figure out a name for the log file.
     filename = os.path.basename(__file__).replace(".py", "")
     datetime_str = datetime.datetime.strftime(datetime.datetime.now(),
@@ -434,9 +446,7 @@ def setup_logging():
     os.makedirs(os.path.dirname(logfilename), exist_ok=True)
     filehandler = logging.FileHandler(logfilename, mode='w')
     filehandler.setLevel(logging.INFO)
-    # Create a handler for stdout.
-    consolehandler = logging.StreamHandler()
-    consolehandler.setLevel(logging.INFO)
+    logger.addHandler(filehandler)
     # Create a formatter object, to determine output format.
     fmt = "%(asctime)s %(levelname).1s: %(message)s"
     datefmt = "%Y-%m-%d %H:%M:%S"
@@ -444,9 +454,6 @@ def setup_logging():
     # Make both stdout and file logging use this formatter.
     consolehandler.setFormatter(formatter)
     filehandler.setFormatter(formatter)
-    # Set the logger to use both handlers.
-    logger.addHandler(filehandler)
-    logger.addHandler(consolehandler)
 
 
 def parse_args():
@@ -564,10 +571,10 @@ if __name__ == "__main__":
             'parent_id': None, 
             'parent_treepath': '',
             'branch_num': 0, 
-            't_max': 7, 
+            't_max': 0.5, 
             'coeff': 1.0,
-            'measurement_frequency': 2,
-            'checkpoint_frequency': 4,
+            'measurement_frequency': 0.05,
+            'checkpoint_frequency': 0.1,
             'initial_pars_path': 'confs/initial_pars.yaml',
             'time_evo_pars_path': 'confs/time_evo_pars.yaml',
             'branch_pars_path': 'confs/branch_pars.yaml'
