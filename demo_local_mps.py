@@ -250,6 +250,15 @@ class Distree_Demo(dst.Distree):
 
     def evolve_state(self, state, taskdata):
         pars = self.load_yaml(taskdata["time_evo_pars_path"])
+        if not "real_step_size" in pars:
+            # TODO Recomputing J here is not the most elegant solution, but I'm
+            # not sure what's the right place to put this.
+            relative_step_size = pars["relative_step_size"]
+            initial_pars = self.load_yaml(taskdata["initial_pars_path"])
+            stiffness = initial_pars["stiffness"]
+            N = initial_pars["N"]
+            absJ = stiffness*N
+            pars["real_step_size"] = relative_step_size/absJ
         state, time_increment = evolve_mps(state, pars)
         return state, time_increment
 
