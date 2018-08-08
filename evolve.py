@@ -59,12 +59,13 @@ def evolve_mps(s, pars):
     auto_truncate = pars["auto_truncate"]
     TEBD_steps_factor = pars["TEBD_steps_factor"]
 
-    s.update(auto_truncate=auto_truncate) 
+    s.update(auto_truncate=auto_truncate)
     # We are using Runge-Kutta order 4, but if the MPS is ill-conditioned then
     # fall back to TEBD "safety net".
     if TEBD_safety_net and not is_wellconditioned(s, TEBD_schmidt_tol):
         take_step_TEBD(s, TEBD_steps_factor, real_step_size*1.j)
     else:
         s.take_step_RK4(real_step_size*1.j)
+    s.update(auto_truncate=auto_truncate)
     return s, real_step_size
 
