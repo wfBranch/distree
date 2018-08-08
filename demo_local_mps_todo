@@ -1,3 +1,6 @@
+Figure out a good way to allow easily varying the parameters in the _pars.yaml files.
+One good option would be having taskdata allow listing a .yaml file, but also listing parameters individually, which then override the defaults provided in the .yaml file.
+
 Probably add an additional yaml parameter file for parameters related to data taking.
 
 Consider reorganizing the directory structure. Maybe move all MPS stuff into a subfolder.
