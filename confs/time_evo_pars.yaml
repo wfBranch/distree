@@ -1,6 +1,7 @@
+D_max: 52
 TEBD_safety_net: True
 TEBD_steps_factor: 5
-TEBD_schmidt_tol: !!float 1e-8
+TEBD_schmidt_tol: !!float 1e-6
 auto_truncate: False
 #real_step_size: 0.0001
 relative_step_size: 0.1
