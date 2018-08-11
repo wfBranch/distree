@@ -73,7 +73,7 @@ def evolve_mps(s, pars):
     real_step_size = pars["real_step_size"]
     auto_truncate = pars["auto_truncate"]
     TEBD_steps_factor = pars["TEBD_steps_factor"]
-    D_max = pars["D_max"]
+    D_max = pars["bond_dim"]
 
     s.update(auto_truncate=auto_truncate)
     # We are using Runge-Kutta order 4, but if the MPS is ill-conditioned then

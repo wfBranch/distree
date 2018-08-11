@@ -1,4 +1,4 @@
-D_max: 52
+bond_dim: 52
 TEBD_safety_net: True
 TEBD_steps_factor: 5
 TEBD_schmidt_tol: !!float 1e-6

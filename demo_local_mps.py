@@ -193,8 +193,9 @@ class Distree_Demo(dst.Distree):
         # that specifies what measurements to do, instead of this hardcoded
         # stuff. Consider putting them in a measurement_pars.yaml file.
         initial_pars = self.load_yaml(taskdata["initial_pars_path"])
+        time_evo_pars = self.load_yaml(taskdata["time_evo_pars_path"])
         N = initial_pars["N"]
-        Dmax = initial_pars["bond_dim"]
+        Dmax = time_evo_pars["bond_dim"]
         return {'t': MeasTime(N, Dmax),
                 'H': MeasH(N, Dmax),
                 'H_Heis': MeasHheis(N, Dmax, initial_pars),
@@ -529,7 +530,6 @@ def get_hamiltonian_decomp(pars):
 def initial_state(pars, ham):
     qn = pars["qn"]  # Local state space dimension
     N = pars["N"]    # System size
-    bond_dim = pars["bond_dim"]  # Bond dimension
     zero_tol = pars["zero_tol"]  # Tolerance in evoMPS
     sanity_checks = pars["sanity_checks"]  # Sanity checks in evoMPS
     auto_truncate = pars["auto_truncate"]  # Automatic truncation in evoMPS
@@ -538,7 +538,7 @@ def initial_state(pars, ham):
     th2  = pars["theta2"]  # Angle for the initial state
     phi2 = pars["phi2"]    # Angle for the initial state
 
-    D = [bond_dim]*(N+1)
+    D = [1]*(N+1)  # The initial state is a product state, see below.
     q = [qn]*(N+1)
     s = tdvp.EvoMPS_TDVP_Generic(N, D, q, ham)
     s.zero_tol = zero_tol
