@@ -244,9 +244,13 @@ class Distree_Demo(dst.Distree):
         return state
 
     def should_branch(self, state, t, prev_branching_time, taskdata):
+        #return False  # DEBUGGING
         # TODO This should be replaced with some more sophisticated check of
         # when to branch, based also on properties of the state.
-        return t > 2 and t - prev_branching_time > 1
+        res = ((2.15 > t >= 1.99 and t - prev_branching_time > 1)
+               or
+               (4.15 > t >= 3.99 and t - prev_branching_time > 1))
+        return res
 
     def evolve_state(self, state, taskdata):
         pars = self.load_yaml(taskdata["time_evo_pars_path"])
@@ -315,6 +319,8 @@ class Distree_Demo(dst.Distree):
             # them up incurs small floating point errors. We counter this by
             # rounding. It keeps the logs and filenames prettier.
             t = np.around(t, decimals=13)
+            # We make sure t is a python float, and not a numpy float, to make the yaml dumps not look awful.
+            t = float(t)
             logging.info("Task {} at t={}.".format(task_id, t))
 
             if t - prev_measurement_time >= taskdata["measurement_frequency"]:
@@ -330,9 +336,10 @@ class Distree_Demo(dst.Distree):
 
             if self.should_branch(state, t, prev_branching_time, taskdata):
                 logging.info("Task {} branching.".format(task_id))
-                did_branch = self.branch(state, t, taskdata, task_id)
-                if did_branch:
-                    logging.info("Task {}, branches found.".format(task_id))
+                num_branches = self.branch(state, t, taskdata, task_id)
+                if num_branches > 1:
+                    logging.info("Task {}, branched into {} children."
+                                 .format(task_id, num_branches))
                     break
                 else:
                     logging.info("Task {}, no branches found.".format(task_id))
@@ -358,7 +365,7 @@ class Distree_Demo(dst.Distree):
 
         if num_children < 2:
             # No branching happened.
-            return False
+            return num_children
 
         taskdata['num_children'] = num_children
         parent_treepath = taskdata['parent_treepath']
@@ -376,7 +383,9 @@ class Distree_Demo(dst.Distree):
                 'branch_num': i, 
                 't_max': taskdata["t_max"],
                 'state_paths': {t: child_state_path},
-                'coeff': child_coeff*taskdata["coeff"], 
+                # We explicitly cast to float, to avoid numpy.float64 and its
+                # ugly yaml dump.
+                'coeff': float(child_coeff*taskdata["coeff"]),
                 'measurement_frequency': taskdata["measurement_frequency"],
                 'checkpoint_frequency': taskdata["checkpoint_frequency"],
                 'initial_pars_path': taskdata["initial_pars_path"],
@@ -390,7 +399,7 @@ class Distree_Demo(dst.Distree):
                 task_id, child_taskdata, task_id=child_id
             )
             # NOTE: We could add more child info to the parent taskdata here
-        return True
+        return num_children
 
 # End of custom Distree subclass #
 
@@ -580,7 +589,7 @@ if __name__ == "__main__":
             'parent_id': None, 
             'parent_treepath': '',
             'branch_num': 0, 
-            't_max': 0.5, 
+            't_max': 6.0,
             'coeff': 1.0,
             'measurement_frequency': 0.05,
             'checkpoint_frequency': 0.1,
