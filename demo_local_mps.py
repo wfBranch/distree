@@ -648,7 +648,7 @@ if __name__ == "__main__":
             'parent_id': None, 
             'parent_treepath': '',
             'branch_num': 0, 
-            't_max': 1.99,#6.0,
+            't_max': 6.0,
             'coeff': 1.0,
             'measurement_frequency': 0.05,
             'checkpoint_frequency': 100.,#0.1,   #Does this automatically take data at the end?
