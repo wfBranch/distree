@@ -25,6 +25,31 @@ import h5py
 from evolve import evolve_mps
 from find_branches import find_branches
 
+
+# J: All comments with a "J:" out front denote comments written by Jess as he
+# tries to understand Markus' and Ash's code.  Markus and Ash can feel free to
+# edit or delete the comments and, once they are correct and useful, remove the
+# "J:" signifier.
+
+# J: == Preliminaries ==
+# I think a "task" is a single computational process corresponding to
+# a single node in our branch tree.  Each node corresponds to the
+# evolution of a single branch between the two branching times when it
+# is created  from it parent branch and when it spawns its child
+# branches.   A  task creates some (what?) task-specific files on disk,
+# evolves the state for a certain number of time steps, captures
+# measurement data about the state, records that data (and,
+# occationally, the state itself) to file, and then decides at some
+# point to branch, ending the time evolution.  The task then creates
+# child tasks corresponding to child branches and records pointers to
+# these children in the task's files.
+
+# The main loop for running the task is implemented inside run_task().  That
+# function calls evolve_state() which in turns calls evolve_mps().  Each time
+# time step in the main loop, should_branch() is called to see if it's time
+# to look for branches yet (a computationally costly process).  When that returns
+# true, branch() is executed to so.
+
 class Meas():
     def __init__(self, N, Dmax):
         self.N = N
@@ -233,6 +258,8 @@ class Distree_Demo(dst.Distree):
         path = os.path.join(self.data_path, "{}_t{}.p".format(task_id, t))
         return path
 
+    # J: Saves the current quantum state (currently, an evoMPS object) to a 
+    # pickle file.  (Single-time snapshot, not a trajectory)
     def store_state(self, state, **kwargs):
         path = self.get_state_path(**kwargs)
         with open(path, "wb") as f:
@@ -244,15 +271,20 @@ class Distree_Demo(dst.Distree):
             state = pickle.load(f)
         return state
 
+    # J: Decides whether we should *check* for branches by running Dan's code
+    # We don't do this every timestep because it is too computationally costly
     def should_branch(self, state, t, prev_branching_time, taskdata):
         #return False  # DEBUGGING
         # TODO This should be replaced with some more sophisticated check of
         # when to branch, based also on properties of the state.
+        #res = (0.2 > t > 0.1 and t - prev_branching_time > 0.1) # DEBUGGING
         res = ((2.15 > t >= 1.99 and t - prev_branching_time > 1)
                or
                (4.15 > t >= 3.99 and t - prev_branching_time > 1))
         return res
 
+    # J: This is a general function for doing a single step of real-time
+    # evolution.  It calls evolve_mps()
     def evolve_state(self, state, taskdata):
         pars = self.load_yaml(taskdata["time_evo_pars_path"])
         if not "real_step_size" in pars:
@@ -267,6 +299,7 @@ class Distree_Demo(dst.Distree):
         state, time_increment = evolve_mps(state, pars)
         return state, time_increment
 
+    # J: Contains the main time-evolution loop
     def run_task(self, taskdata_path):
         # The taskdata file contains everything needed to run the task.
         # Initial values, parameters, and so on.
@@ -358,6 +391,7 @@ class Distree_Demo(dst.Distree):
         self.save_task_data(taskdata_path, taskdata, task_id, parent_id) 
         logging.info("Task {} done.".format(task_id))
 
+    # J: This function is called if should_branch() returns True
     def branch(self, state, t, taskdata, task_id):
         # Try to branch.
         branch_pars = self.load_yaml(taskdata["branch_pars_path"])
@@ -487,10 +521,15 @@ def parse_args():
     return args
 
 
+# J: Returns a single-qubit pure state (length-2 list) corresponding 
+# to a point on the Bloch sphere
 def bloch_state(theta,phi):
     return [sp.cos(theta/2)+0j, sp.sin(theta/2)*sp.exp(1j*phi)]
 
 
+# J: Constructs the NN Hamiltonian as a list of N two-site operators, to
+# be fed into the evoltution algorithm, based on the parameters. Calls 
+# matica.ham_heisenberg_ising()
 def get_hamiltonian(pars):
     N = pars["N"]    # System size
     hamiltonian = pars["hamiltonian"]  # Name of the model
@@ -506,7 +545,8 @@ def get_hamiltonian(pars):
 
     return ham
 
-
+# J: Same as get_hamiltonian(), but returns the heisenberg and ising Hamiltonians 
+# separately so that, for instance, we can calculate <H_Heisenberg>
 def get_hamiltonian_decomp(pars):
     N = pars["N"]    # System size
     hamiltonian = pars["hamiltonian"]  # Name of the model
@@ -527,6 +567,10 @@ def get_hamiltonian_decomp(pars):
     return hamDH, hamTVI
 
 
+# J: This is only called by a task when it is the first task, i.e., the task
+# corresponding to the root of the tree and the beginning of the simulation.  
+# It constructs the evoMPS object and initializes it with an initial state 
+# determined by the parameters (the classical configuraion, magnons, etc.)
 def initial_state(pars, ham):
     qn = pars["qn"]  # Local state space dimension
     N = pars["N"]    # System size
@@ -537,17 +581,29 @@ def initial_state(pars, ham):
     phi1 = pars["phi1"]    # Angle for the initial state
     th2  = pars["theta2"]  # Angle for the initial state
     phi2 = pars["phi2"]    # Angle for the initial state
+    create_magnons = pars["create_magnons"]  #whether to create magnons in the initial state to act as an environment
+    magnon_parameters = pars["magnon_parameters"]  #describes which chain (S or T) each magnon is on, and its relative momentum
 
-    D = [1]*(N+1)  # The initial state is a product state, see below.
+    initial_bond_dim = 2**len(magnon_parameters) if create_magnons else 1
+
+
+    D = [initial_bond_dim]*(N+1)  # The initial state is a product state, and then magnons are added.  Too many dim?
     q = [qn]*(N+1)
     s = tdvp.EvoMPS_TDVP_Generic(N, D, q, ham)
     s.zero_tol = zero_tol
     s.sanity_checks = sanity_checks
 
-    # "InitCondC" (ZY):
-    # Comfirmed ZY trajectory chaotic in Mathematica with chi = 2
     init_state = sp.kron(bloch_state(th1, phi1), bloch_state(th2, phi2))
     s.set_state_product([init_state]*N)
+
+    if create_magnons:
+        for magnon in magnon_parameters:
+            # magnon['operator'] is 0,1,2,3,4, or 5
+            # matica.mag_ops = [Sx, Sy, Sz, Tx, Ty, Tz]
+            magnon_operator = matica.mag_ops[magnon['operator']] 
+            magnon_momentum = 2*sp.pi*magnon['relative_momentum']/N
+            s.apply_op_MPO(matica.magnon_MPO(magnon_operator,magnon_momentum,N),1)
+
     s.update(auto_truncate=auto_truncate)
     return s
 
@@ -589,10 +645,10 @@ if __name__ == "__main__":
             'parent_id': None, 
             'parent_treepath': '',
             'branch_num': 0, 
-            't_max': 6.0,
+            't_max': 1.99,#6.0,
             'coeff': 1.0,
             'measurement_frequency': 0.05,
-            'checkpoint_frequency': 0.1,
+            'checkpoint_frequency': 100.,#0.1,   #Does this automatically take data at the end?
             'initial_pars_path': 'confs/initial_pars.yaml',
             'time_evo_pars_path': 'confs/time_evo_pars.yaml',
             'branch_pars_path': 'confs/branch_pars.yaml'

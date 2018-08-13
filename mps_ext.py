@@ -696,7 +696,8 @@ def copy_mps(s):
 
 
 def find_records_mps(s,i1,i2,system_for_records='BC',eps_ker_C = 1E-5, 
-                     coeff_tol = 1e-6, degeneracy_tol = 1E-4, transfer_operator_method = 'low_bond_dimension' ):
+                     coeff_tol = 1e-6, degeneracy_tol = 1E-4, transfer_operator_method = 'low_bond_dimension',
+                     max_branch_ratio = 0 ):
     """
         For EvoMPS objects
         Finds records on regions A, B, C, where A = {1,..,i1-1}, B = {i2+1,...,N}
@@ -706,6 +707,8 @@ def find_records_mps(s,i1,i2,system_for_records='BC',eps_ker_C = 1E-5,
             coeff_tol: only report branches with coefficient (amplitude squared) greater than coeff_tol
             degeneracy_tol:  tolerance for looking for degenerate eigenvalues of random X in kernel
             transfer_operator_method: see mps_ext.transfer_operator() 
+            max_branch_ratio: if the number of branches exceeds this, the smallest-coefficient branches
+              are bundled together so that the maximum is not exceeded
         MPS should be updated [s.update()], in right canonical form, or possibly handling left canonical form also
     """     
     dimA = s.D[i1-1]
@@ -768,22 +771,22 @@ def find_records_mps(s,i1,i2,system_for_records='BC',eps_ker_C = 1E-5,
     X = np.tensordot(V[:,0:dimKerC],np.ones(dimKerC)+np.random.rand(dimKerC),axes=(1,0)).reshape((dimA,dimA)) # random operator in kernel of C
     X = X + X.conj().transpose()
     D,V = la.eigh(X) # format: H = V D V^+, i.e. H = V.dot(np.diag(D).dot(V.conjugate().transpose()), i.e. V[i,j] = i'th component of j'th eigenvector
-    projectorList = [] # list of recorded projectors
-    branchList = []
-    coeffList=[]
-    rankList=[]
+    
     P = np.zeros((dimA,dimA)) # block of algebra of records on A, i.e. recorded 
+    projectorListUntrimmed = [] # list of recorded projectors
     for i in range(dimA):
         if np.abs(D[i]) < 1E-5: # only necessary if state isn't truncated, or...?  Why was this here?
             print('Near-zero eigenvalue of X')
             continue
         P = np.outer(V[:,i],V[:,i].conj())
         if i==0 or np.abs(D[i]-D[i-1])>degeneracy_tol:
-            projectorList.append(P)
+            projectorListUntrimmed.append(P)
         else:
-            projectorList[-1] = projectorList[-1] + P
-    projectorListUntrimmed = projectorList
-    projectorList = []
+            projectorListUntrimmed[-1] = projectorListUntrimmed[-1] + P
+
+    # Calculate the coefficient for each candidate branch and drop the branch if it's smaller than coeff_tol
+    coeffListPartiallyTrimmed = []
+    projectorListPartiallyTrimmed = []
     for i in range(len(projectorListUntrimmed)):
         coeff = np.abs(np.squeeze(np.tensordot(projectorListUntrimmed[i],left,axes=[(0,1),(0,1)]))) # p_i = Tr(\rho_A P)
         """ The coefficients need to be saved separately, because MPS automatically normalize 
@@ -791,16 +794,46 @@ def find_records_mps(s,i1,i2,system_for_records='BC',eps_ker_C = 1E-5,
             (only near-diagonal due to degeneracies or noise), because records commute with RDM 
         """
         if coeff > coeff_tol:
-            projectorList.append(projectorListUntrimmed[i])
-            coeffList.append(coeff)
-            branch = copy_mps(s)
-            branch.A[i1-1] = np.tensordot(branch.A[i1-1],projectorList[-1],axes=[2,0])
-            branch.update()
-            branchList.append(branch)
-            rankList.append(int(np.real(np.round(np.trace(projectorList[-1])))))
+            projectorListPartiallyTrimmed.append(projectorListUntrimmed[i])
+            coeffListPartiallyTrimmed.append(coeff)
+
+    # Order branches from largest to smallest coefficient
+    coeffListPartiallyTrimmed, projectorListPartiallyTrimmed = (list(t) for t in zip(*sorted(zip(coeffListPartiallyTrimmed, projectorListPartiallyTrimmed),reverse=True)))
+    
+    # Set max_num_branches so that it is no larger than len(projectorListPartiallyTrimmed)
+    # Note: max_branch_ratio = 0 indicates the user is allowing an unlimited number of branches
+    if max_branch_ratio <= 0 or max_branch_ratio >= len(projectorListPartiallyTrimmed):
+        max_num_branches = len(projectorListPartiallyTrimmed)
+    else:
+        max_num_branches = max_branch_ratio
+
+    # Assemble final list of recorded projectors, with those for the smallest coefficents
+    # bundled together so the number doesn't exceed max_num_branches
+    projectorList = []
+    for i in range(len(projectorListPartiallyTrimmed)):
+        if i < max_num_branches:
+            projectorList.append(projectorListPartiallyTrimmed[i])
+        else:
+            projectorList[-1] = np.add(projectorList[-1],projectorListPartiallyTrimmed[i])
+
+    # Re-calculating coeffs and then re-sorting projector and coeff lists (largest 
+    # to smallest coefficient) because projector bundling may have messed up the order
+    coeffList= []
+    for i in range(len(projectorList)):
+        coeffList.append(np.abs(np.squeeze(np.tensordot(projectorList[i],left,axes=[(0,1),(0,1)])))) # p_i = Tr(\rho_A P)
+    coeffList, projectorList = (list(t) for t in zip(*sorted(zip(coeffList, projectorList),reverse=True)))
+    
+    # Finally, using our final, ordered list of the projectors, construct the list of branches 
+    # and their list of ranks
+    branchList = []
+    rankList=[]
+    for i in range(len(projectorList)):
+        branch = copy_mps(s)
+        branch.A[i1-1] = np.tensordot(branch.A[i1-1],projectorList[i],axes=[2,0])
+        branch.update()
+        branchList.append(branch)
+        rankList.append(int(np.real(np.round(np.trace(projectorList[i])))))
         
-    # List branches in order of largest to smallest coefficient
-    coeffList, branchList, rankList, projectorList = (list(t) for t in zip(*sorted(zip(coeffList, branchList, rankList, projectorList),reverse=True)))
     return branchList, coeffList, rankList, projectorList, C, D
 
 def schmidt_vectors_mps(s,n):
