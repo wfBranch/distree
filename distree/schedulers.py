@@ -61,7 +61,9 @@ class Sched_Local(Sched):
         subprocess.Popen(args)
 
 class Sched_PBS(Sched):
-    def __init__(self, qname, scriptpath, scriptargs='', python_command=sys.executable, res_list='', job_env=''):
+    def __init__(self, qname, scriptpath, 
+                scriptargs='', python_command=sys.executable, 
+                res_list='', job_env=''):
         self.qname = qname
         self.scriptpath = scriptpath
         self.scriptargs = scriptargs
@@ -71,10 +73,12 @@ class Sched_PBS(Sched):
         self.jobname = os.path.basename(scriptpath)
 
     def get_id(self):
-        return uuid.uuid1() #tasks are assigned UUID's based on the host that schedules them
+        #tasks are assigned UUID's based on the host that schedules them
+        return uuid.uuid1()
 
     def schedule_task(self, taskdata_path):
-        scmd = '%s %s %s %s' % (self.python_command, self.scriptpath, taskdata_path, self.scriptargs)
+        scmd = '%s %s %s %s' % (self.python_command, self.scriptpath, 
+                                taskdata_path, self.scriptargs)
 
         qsub_cmd = 'qsub -N %s -q %s -k oe' % (quote(self.jobname), self.qname)
         if len(self.res_list) > 0:
