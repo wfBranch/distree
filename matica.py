@@ -44,6 +44,9 @@ mathematica_dict_data = {# per-timestep data
     'spin_cov':"SpinCov",
     'sz_cov':"SzCov",
     'sigma_cov':'SigmaCov',
+    'total_spin_cov':"TotalSpinCov", # Next 3 same as last 3, only uses MPO.  Faster to compute, but no single-site index
+    'total_sz_cov':"SzCov", 
+    'total_sigma_cov':'TotalSigmaCov',
     't_cov':'tCov',
     'mag_cov':'MagCov',
     'coeff':'Coeff'
@@ -57,6 +60,7 @@ Sx_pauli = sp.array([[0,   1],[1,  0]])
 Sy_pauli = sp.array([[0, -1j],[1j, 0]])
 Sz_pauli = sp.array([[1,   0],[0, -1]])
 Id_pauli = sp.array([[1,   0],[0,  1]])
+Zr_pauli = sp.array([[0,   0],[0,  0]])
 
 
 ### Single-site operators ###
@@ -68,7 +72,43 @@ Tx = sp.kron(Id_pauli, Sx_pauli)
 Ty = sp.kron(Id_pauli, Sy_pauli)
 Tz = sp.kron(Id_pauli, Sz_pauli)
 Id = sp.kron(Id_pauli, Id_pauli)
+Zr = sp.kron(Zr_pauli, Zr_pauli)
 mag_ops = [Sx, Sy, Sz, Tx, Ty, Tz]
+
+### MPO for creating magnon with momentum k ###
+def magnon_MPO(op,k,N):
+    return [[[op,Id]]] + [[[Id,Zr],[op*sp.exp(1.j*k*n),Id]] for n in range(1,N-1)] + [[[Id],[op*sp.exp(1.j*k*(N-1))]]]
+
+### MPO for computing variance of total spin ###
+def MPO_sq_mid_element(op1,op2):
+    # #op_ct = op.conj().transpose()
+    # diag_el = [[Id, Zr],[op1, Id]]
+    # up_rt_el = [[Zr, Zr],[Zr, Zr]]
+    # lw_lf_el = [[op2, Zr],[sp.dot(op1,op2), op2]]
+    # return [[diag_el, up_rt_el],[diag_el,lw_lf_el]]
+    # OK, previously I built this matrix up systematically, but I can't use 
+    # the Kron product b/c I need to dot op1 and op2 together, and I need to 
+    # combine the virtual indicies, so I'm just doing it by hand
+    return ([
+        [             Id,  Zr,  Zr, Zr], 
+        [            op1,  Id,  Zr, Zr], 
+        [            op2,  Zr,  Id, Zr], 
+        [sp.dot(op1,op2), op2, op1, Id]
+        ])
+def MPO_sq_left_element(op1,op2):
+    # lf_el = [[sp.dot(op1,op2),op2]]
+    # rt_el = [[op1,Id]]
+    # return [[lf_el,rt_el]]
+    return sp.array([[sp.dot(op1,op2),op2,op1,Id]])
+def MPO_sq_right_element(op1,op2):
+    # up_el = [[Id],[op1]]
+    # lw_el = [[op2],[sp.dot(op1,op2)]]
+    # return [[up_el],[lw_el]]
+    return sp.array([[Id],[op1],[op2],[sp.dot(op1,op2)]])
+
+mag_MPO_sq_left_elements  = [[MPO_sq_left_element(op1,op2) for op1 in mag_ops] for op2 in mag_ops]
+mag_MPO_sq_mid_elements   = [[MPO_sq_mid_element(op1,op2) for op1 in mag_ops] for op2 in mag_ops]
+mag_MPO_sq_right_elements = [[MPO_sq_right_element(op1,op2) for op1 in mag_ops] for op2 in mag_ops]
 
 
 ### Hamiltonian ###
@@ -135,18 +175,59 @@ def record_spin_cov_from_mps(s, t, dataset, thoroughness = "All"):
         ])
         return sp.add(upper_and_half_diag, upper_and_half_diag.transpose()).tolist()
     dataset['t_cov'].append(t)  #this is special subset of times when we calc the spin cov
-    dataset['mag_cov'].append([ #this is special subset magnetizations when we calc the spin cov
+    dataset['mag_cov'].append([ #this is special subset of magnetizations when we calc the spin cov
             [s.expect_1s(ST, n).real for ST in mag_ops]
         for n in range(1, s.N + 1)])
+
+    # I *think* the following array isn't very costly to construct each time 
+    # we want to compute the magnetization covariance because it just copies references.
+    # We need to do it here because we won't know N when the constant arrays are defined
+    # at the top of this module
+    mag_MPO_sq = [( 
+       [(
+            [mag_MPO_sq_left_elements[i1][i2]] 
+                + [mag_MPO_sq_mid_elements[i1][i2] for n in range (1,s.N-1)] 
+                + [mag_MPO_sq_right_elements[i1][i2]]
+        ) for i1 in range(6)] #6 = len(mag_ops)
+    ) for i2 in range(6)]  #6 = len(mag_ops)
+    # Note: Currently calculating <(S)^2> takes O(N) time but <sigma_n^z sigma_m^z> 
+    # for all n, m takes O(N^3) time.  This is because we use s.expect_1s_1s for
+    # the latter, and this scales proportional to the distance between the sites (and
+    # because that's calculating N^2 EV's in the first place).  In order to get site-
+    # to-site correlation functions in the lattice, you can adapt the function evoMPS
+    # uses to calc the MPO expectation value in order to get <sigma_n^z sigma_m^z> 
+    # for n=N/2 and m varying over the entire lattice in O(N).  Not implemented yet.
+
     if thoroughness == "Sz":
         dataset['sz_cov'].append(cov_mat(Sz,Sz))
+        dataset['total_sz_cov'].append(s.expect_MPO(mag_MPO_sq[2][2], 1).real) #2 = Sz's position in mag_ops
+        # sz_cov_tot = sp.sum(dataset['sz_cov'][-1])
+        # print("sz_cov_tot:",sz_cov_tot)
+        # print("total_sz_cov:",dataset['total_sz_cov'][-1])
+    elif thoroughness == "Total_Sz":
+        dataset['total_sz_cov'].append(s.expect_MPO(mag_MPO_sq[2][2], 1).real) #2 = Sz's position in mag_ops
     elif thoroughness == "Sigma":
         dataset['sigma_cov'].append([cov_mat(Sx,Sx),cov_mat(Sy,Sy),cov_mat(Sz,Sz)])
         dataset['sz_cov'].append(dataset['sigma_cov'][-1][2]) # -1 = thing just appended, 2 = Sz's position in mag_ops
-    else:
+        dataset['total_sigma_cov'].append([s.expect_MPO(mag_MPO_sq[r][r], 1).real  for r in range(3)])
+        dataset['total_sz_cov'].append(dataset['total_sigma_cov'][-1][2]) # -1 = thing just appended, 2 = Sz's position in mag_ops
+    elif thoroughness == "Total_Sigma":
+        dataset['total_sigma_cov'].append([s.expect_MPO(mag_MPO_sq[r][r], 1).real  for r in range(3)])
+        dataset['total_sz_cov'].append(dataset['total_sigma_cov'][-1][2]) # -1 = thing just appended, 2 = Sz's position in mag_ops
+    elif thoroughness == "Full":
         dataset['spin_cov'].append([[cov_mat(op1,op2) for op1 in mag_ops] for op2 in mag_ops])
         dataset['sigma_cov'].append([dataset['spin_cov'][-1][r][r] for r in (0,1,2)])  
         dataset['sz_cov'].append(dataset['spin_cov'][-1][2][2])  
+        dataset['total_spin_cov'].append([[s.expect_MPO(mag_MPO_sq[r1][r2], 1).real for r1 in range(6)] for r2 in range(6)])
+        dataset['total_sigma_cov'].append([dataset['total_spin_cov'][-1][r][r] for r in range(3)])  #0,1,2 = Sx, Sy, Sz
+        dataset['total_sz_cov'].append(dataset['total_spin_cov'][-1][2][2]) #2=Sz
+    elif thoroughness == "Total_Full":
+        dataset['total_spin_cov'].append([[s.expect_MPO(mag_MPO_sq[r1][r2], 1).real for r1 in range(6)] for r2 in range(6)])
+        dataset['total_sigma_cov'].append([dataset['total_spin_cov'][-1][r][r] for r in range(3)])  #0,1,2 = Sx, Sy, Sz
+        dataset['total_sz_cov'].append(dataset['total_spin_cov'][-1][2][2]) #2=Sz
+    else:
+        print ("Shouldn't be here!")
+        assert False
     return time.time()-stop_watch
 
 def record_mi_from_mps(s, t, dataset, mi_bounds, truncate=None):
