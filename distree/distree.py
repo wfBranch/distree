@@ -29,6 +29,11 @@ class Distree_Base():
     reconstruct the tree by just scanning through the log.
     """
     def write_log_entry(self, task_id, parent_id, data_fn):
+        if not parent_id and os.path.isfile(self.log_path):
+            raise ValueError(
+                "Log file already exists while scheduling root job!"
+                )
+
         lock = filelock.FileLock(self.log_path + '.lock')
         with lock:
             f = open(self.log_path, "a")
