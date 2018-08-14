@@ -636,7 +636,11 @@ def parse_args():
     parser.add_argument('--child', dest='child', default=False,
                         action='store_true')
     parser.add_argument('--confdir', type=str, nargs="?", 
-                        dest='confdir', default="./conf")
+                        dest='confdir', default='')
+    parser.add_argument('--jobdir', type=str, nargs="?", 
+                        dest='jobdir', default='')
+    parser.add_argument('--root_id', type=str, nargs="?", 
+                        dest='root_id', default='')
     parser.add_argument('--show', dest='show', default=False,
                         action='store_true')
     args = parser.parse_args()
@@ -648,12 +652,18 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Name for this tree
-    root_id = "testjob_MPS"
+    if args.root_id:
+        root_id = args.root_id
+    else:
+        root_id = "testjob_MPS"
 
     # A folder where all the job's data will be stored.
-    # This currently uses the working dir, but this needs to change
-    # on the cluster.
-    job_dir = os.path.join(os.getcwd(),"{}/".format(root_id))
+    if args.jobdir:
+        job_dir = args.jobdir
+    else:
+        # This currently uses the working dir, but this needs to change
+        # on the cluster.
+        job_dir = os.path.join(os.getcwd(),"{}/".format(root_id))
     
     # This log file keeps track of the tree.
     log_path = os.path.join(job_dir, "{}.txt".format(root_id))
@@ -665,7 +675,11 @@ if __name__ == "__main__":
 
     # Create the tree object, telling it where the logfile lives and how
     # to run tasks (by running this script with --child).
-    dtree = dst.Distree_Local(log_path, sys.argv[0], scriptargs=['--child'])
+    dtree = dst.Distree_Local(log_path, sys.argv[0], 
+                    scriptargs=['--child', 
+                                '--root_id', root_id,
+                                '--jobdir', job_dir]
+                    )
 
     # NOTE: This script is designed so that it can schedule the root job and
     # also child jobs, depending on the supplied command-line arguments.
