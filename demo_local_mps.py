@@ -174,29 +174,31 @@ class MeasSchmidts(Meas):
         return val
 
 
-def dump_yaml(data, path):
+def dump_yaml(data, base_dir, yaml_path):
+    path = os.path.join(base_dir, yaml_path)
+    pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, 'w') as f:
         yaml.dump(data, f, default_flow_style=False)
 
 
-def load_yaml(path):
+def load_yaml(base_dir, yaml_path):
+    path = os.path.join(base_dir, yaml_path)
     with open(path, 'r') as f:
         data = yaml.load(f)
     return data
 
 
-def get_taskdata_path(data_dir, task_id):
-    return os.path.join(data_dir, '%s.yaml' % task_id)
+def get_taskdata_relpath(task_id):
+    return 'data/%s.yaml' % task_id
 
 
-def save_task_data(taskdata_path, data, task_id, parent_id):
-    pathlib.Path(taskdata_path).parent.mkdir(parents=True, exist_ok=True)
+def save_task_data(task_dir, taskdata_relpath, data, task_id, parent_id):
     data.update(task_id=task_id, parent_id=parent_id)
-    dump_yaml(data, taskdata_path)
+    dump_yaml(data, task_dir, taskdata_relpath)
 
 
-def load_task_data(taskdata_path):
-    taskdata = load_yaml(taskdata_path)
+def load_task_data(task_dir, taskdata_relpath):
+    taskdata = load_yaml(task_dir, taskdata_relpath)
     task_id = taskdata.get("task_id", None)
     parent_id = taskdata.get("parent_id", None)
     return taskdata, task_id, parent_id
@@ -206,14 +208,13 @@ def branch_treepath(parent_treepath, branch_num):
     return parent_treepath + '/%u' % branch_num
 
 
-def get_measurement_path(data_dir, task_id):
-    path = os.path.join(data_dir,"{}.h5".format(task_id))
-    return path
+def get_measurement_relpath(task_id):
+    return "data/{}.h5".format(task_id)
 
 
-def get_last_measurement_time(taskdata):
-    measurement_path = taskdata["measurement_path"]
-    with h5py.File(measurement_path, "r") as h5file:
+def get_last_measurement_time(task_dir, taskdata):
+    path = os.path.join(task_dir, taskdata["measurement_path"])
+    with h5py.File(path, "r") as h5file:
         try:
             last_time = max(h5file["t"])
         except ValueError:
@@ -222,12 +223,12 @@ def get_last_measurement_time(taskdata):
     return last_time
 
 
-def initialize_measurements(taskdata):
+def initialize_measurements(task_dir, taskdata):
     # TODO Would be nice to have another set of parameters in taskdata,
     # that specifies what measurements to do, instead of this hardcoded
     # stuff. Consider putting them in a measurement_pars.yaml file.
-    initial_pars = load_yaml(taskdata["initial_pars_path"])
-    time_evo_pars = load_yaml(taskdata["time_evo_pars_path"])
+    initial_pars = load_yaml(task_dir, taskdata["initial_pars_path"])
+    time_evo_pars = load_yaml(task_dir, taskdata["time_evo_pars_path"])
     N = initial_pars["N"]
     Dmax = time_evo_pars["bond_dim"]
     return {'t': MeasTime(N, Dmax),
@@ -239,9 +240,9 @@ def initialize_measurements(taskdata):
             'all_schmidt': MeasSchmidts(N, Dmax)}
 
 
-def initialize_measurement_data(taskdata, meas):
-    measurement_path = taskdata["measurement_path"]
-    with h5py.File(measurement_path, "a") as h5file:
+def initialize_measurement_data(task_dir, taskdata, meas):
+    path = os.path.join(task_dir, taskdata["measurement_path"])
+    with h5py.File(path, "a") as h5file:
         for mname, m in meas.items():
             shp = m.get_shape()
             h5file.create_dataset(mname, (0,*shp), maxshape=(None,*shp), dtype=m.get_dtype())
@@ -252,9 +253,9 @@ def measure_data(state, t, meas):
         m.measure_to_buffer(state, t)
 
 
-def save_measurement_data(state, taskdata, meas):
-    measurement_path = taskdata["measurement_path"]
-    with h5py.File(measurement_path, "a") as h5file:
+def save_measurement_data(task_dir, state, taskdata, meas):
+    path = os.path.join(task_dir, taskdata["measurement_path"])
+    with h5py.File(path, "a") as h5file:
         for mname, m in meas.items():
             dset = h5file[mname]
             buf = m.get_buffer()
@@ -265,21 +266,22 @@ def save_measurement_data(state, taskdata, meas):
                 dset[off + j, ...] = buf[j]
 
 
-def get_state_path(data_dir, task_id, t):
-    path = os.path.join(data_dir, "{}_t{}.p".format(task_id, t))
-    return path
+def get_state_relpath(task_id, t):
+    return "data/{}_t{}.p".format(task_id, t)
 
 
 # J: Saves the current quantum state (currently, an evoMPS object) to a 
 # pickle file.  (Single-time snapshot, not a trajectory)
-def store_state(data_dir, state, **kwargs):
-    path = get_state_path(data_dir, **kwargs)
+def store_state(task_dir, state, **kwargs):
+    relpath = get_state_relpath(**kwargs)
+    path = os.path.join(task_dir, relpath)
     with open(path, "wb") as f:
         pickle.dump(state, f)
-    return path
+    return relpath
 
 
-def load_state(path):
+def load_state(task_dir, state_relpath):
+    path = os.path.join(task_dir, state_relpath)
     with open(path, "rb") as f:
         state = pickle.load(f)
     return state
@@ -287,14 +289,14 @@ def load_state(path):
 
 # J: Decides whether we should *check* for branches by running Dan's code
 # We don't do this every timestep because it is too computationally costly
-def should_branch(state, t, t_increment, prev_branching_time, taskdata):
+def should_branch(state, t, t_increment, prev_branching_time, task_dir, taskdata):
     #return False  # DEBUGGING
     # TODO This should be replaced with some more sophisticated check of
     # when to branch, based also on properties of the state.
     # res = ((2.15 > t >= 1.99 and t - prev_branching_time > 1)
     #         or
     #         (4.15 > t >= 3.99 and t - prev_branching_time > 1))
-    branch_pars = load_yaml(taskdata["branch_pars_path"])
+    branch_pars = load_yaml(task_dir, taskdata["branch_pars_path"])
     branch_check_time = branch_pars["branch_check_time"]
     max_branch_ratio = branch_pars["max_branch_ratio"]
     if max_branch_ratio == 1:
@@ -306,13 +308,13 @@ def should_branch(state, t, t_increment, prev_branching_time, taskdata):
 
 # J: This is a general function for doing a single step of real-time
 # evolution.  It calls evolve_mps()
-def evolve_state(state, taskdata):
-    pars = load_yaml(taskdata["time_evo_pars_path"])
+def evolve_state(state, task_dir, taskdata):
+    pars = load_yaml(task_dir, taskdata["time_evo_pars_path"])
     if not "real_step_size" in pars:
         # TODO Recomputing J here is not the most elegant solution, but I'm
         # not sure what's the right place to put this.
         relative_step_size = pars["relative_step_size"]
-        initial_pars = load_yaml(taskdata["initial_pars_path"])
+        initial_pars = load_yaml(task_dir, taskdata["initial_pars_path"])
         stiffness = initial_pars["stiffness"]
         N = initial_pars["N"]
         absJ = stiffness*N
@@ -322,33 +324,35 @@ def evolve_state(state, taskdata):
 
 
 # J: Contains the main time-evolution loop
-def run_task(dtree, data_dir, taskdata_path):
+def run_task(dtree, task_dir, taskdata_relpath):
     # The taskdata file contains everything needed to run the task.
     # Initial values, parameters, and so on.
     # It also contains the task_id, generated by the scheduler when the
     # task was scheduled, and the parent_id, which may be `None`.
-    taskdata, task_id, parent_id = load_task_data(taskdata_path)
-    state_paths = taskdata.get("state_paths", {})
+    taskdata, task_id, parent_id = load_task_data(task_dir, taskdata_relpath)
+    state_relpaths = taskdata.get("state_paths", {})
 
     # Check if the dictionary of states at different times is empty.
-    if not state_paths:
-        logging.info("The task {} has no states in it, so we initialize.")
-        initial_pars = load_yaml(taskdata["initial_pars_path"])
+    if not state_relpaths:
+        logging.info(
+          "The task {} has no states in it, so we initialize.".format(task_id)
+          )
+        initial_pars = load_yaml(task_dir, taskdata["initial_pars_path"])
         s = initial_state(initial_pars, get_hamiltonian(initial_pars))
-        s_path = store_state(data_dir, s, t=0.0, task_id=task_id)
-        state_paths[0.0] = s_path
-        taskdata["state_paths"] = state_paths
+        s_path = store_state(task_dir, s, t=0.0, task_id=task_id)
+        state_relpaths[0.0] = s_path
+        taskdata["state_paths"] = state_relpaths
 
     #Initialize the measurement objects
-    meas = initialize_measurements(taskdata)
+    meas = initialize_measurements(task_dir, taskdata)
 
     # Check if there already is a file for storing measurements for the
     # state. If not, create it.
     if ("measurement_path" not in taskdata
             or not taskdata["measurement_path"]):
-        measurement_path = get_measurement_path(data_dir, task_id)
-        taskdata["measurement_path"] = measurement_path
-        initialize_measurement_data(taskdata, meas)
+        measurement_relpath = get_measurement_relpath(task_id)
+        taskdata["measurement_path"] = measurement_relpath
+        initialize_measurement_data(task_dir, taskdata, meas)
 
     # Check if the job already has been run to a point where it has
     # branched.
@@ -359,17 +363,17 @@ def run_task(dtree, data_dir, taskdata_path):
         msg = "This task already has children."
         raise NotImplementedError(msg)
 
-    prev_checkpoint = max(state_paths)
+    prev_checkpoint = max(state_relpaths)
     t = prev_checkpoint  # The current time in the evolution.
-    state_path = state_paths[t]
-    state = load_state(state_path)
-    prev_branching_time = min(state_paths)
-    prev_measurement_time = get_last_measurement_time(taskdata)
+    state_relpath = state_relpaths[t]
+    state = load_state(task_dir, state_relpath)
+    prev_branching_time = min(state_relpaths)
+    prev_measurement_time = get_last_measurement_time(task_dir, taskdata)
 
     logging.info("Starting the time evolution loop for task {}."
                     .format(task_id))
     while t < taskdata["t_max"]:
-        state, t_increment = evolve_state(state, taskdata)
+        state, t_increment = evolve_state(state, task_dir, taskdata)
         t += t_increment
         # Many times increments are multiples of powers of ten, but adding
         # them up incurs small floating point errors. We counter this by
@@ -386,13 +390,15 @@ def run_task(dtree, data_dir, taskdata_path):
 
         if t - prev_checkpoint >= taskdata["checkpoint_frequency"]:
             logging.info("Task {} checkpointing.".format(task_id))
-            state_paths[t] = self.store_state(state, t=t, task_id=task_id)
-            save_measurement_data(state, taskdata, meas)
+            state_relpaths[t] = store_state(task_dir, state, t=t, task_id=task_id)
+            save_measurement_data(task_dir, state, taskdata, meas)
             prev_checkpoint = t
 
-        if should_branch(state, t, t_increment, prev_branching_time, taskdata):
+        if should_branch(
+                state, t, t_increment, prev_branching_time, task_dir, taskdata
+                ):
             logging.info("Task {} branching.".format(task_id))
-            num_branches = branch(dtree, data_dir, state, t, taskdata, task_id)
+            num_branches = branch(state, t, task_dir, taskdata, task_id, dtree)
             if num_branches > 1:
                 logging.info("Task {}, branched into {} children."
                                 .format(task_id, num_branches))
@@ -404,20 +410,20 @@ def run_task(dtree, data_dir, taskdata_path):
     # Always store the state at the end of the simulation.
     # TODO Fix the fact that this gets run even if t > t_max from the
     # start.
-    state_paths[t] = store_state(data_dir, state, t=t, task_id=task_id)
-    save_measurement_data(state, taskdata, meas)
+    state_relpaths[t] = store_state(task_dir, state, t=t, task_id=task_id)
+    save_measurement_data(task_dir, state, taskdata, meas)
 
     # Save the final taskdata, overwriting the initial data file(s)
     # Note that the values in taskdata that have been modified, have been
     # modified in place.
-    save_task_data(taskdata_path, taskdata, task_id, parent_id) 
+    save_task_data(task_dir, taskdata_relpath, taskdata, task_id, parent_id) 
     logging.info("Task {} done.".format(task_id))
 
 
 # J: This function is called if should_branch() returns True
-def branch(dtree, data_dir, state, t, taskdata, task_id):
+def branch(state, t, task_dir, taskdata, task_id, dtree):
     # Try to branch.
-    branch_pars = load_yaml(taskdata["branch_pars_path"])
+    branch_pars = load_yaml(task_dir, taskdata["branch_pars_path"])
     children, coeffs = find_branches(state, branch_pars)
     num_children = len(children)
 
@@ -434,7 +440,7 @@ def branch(dtree, data_dir, state, t, taskdata, task_id):
     for i, (child, child_coeff) in enumerate(zip(children, coeffs)):
         # child_id = self.sched.get_id()  # Instead of this, see below.
         child_id = "{}_c{}".format(task_id, i)
-        child_state_path = store_state(data_dir, child, t=t, task_id=child_id)
+        child_state_path = store_state(task_dir, child, t=t, task_id=child_id)
         child_taskdata = {
             'parent_id': task_id, 
             'parent_treepath': treepath,
@@ -451,24 +457,26 @@ def branch(dtree, data_dir, state, t, taskdata, task_id):
             'branch_pars_path': taskdata["branch_pars_path"]
         }
 
-        child_taskdata_path = get_taskdata_path(data_dir, child_id)
-        save_task_data(child_taskdata_path, child_taskdata, child_id, task_id)
+        child_taskdata_relpath = get_taskdata_relpath(child_id)
+        save_task_data(
+            task_dir, child_taskdata_relpath, child_taskdata, 
+            child_id, task_id)
         # This will add each child task to the log, and schedule them to be
         # run. How they are run is up to the scheduler.
-        dtree.schedule_task(child_id, task_id, child_taskdata_path)
+        dtree.schedule_task(child_id, task_id, child_taskdata_relpath)
 
         # NOTE: We could add more child info to the parent taskdata here
     return num_children
 
 
 # Build an anytree from saved data by parsing the log file.
-def build_tree(log_path):
+def build_tree(log_path, task_dir):
     top = None
     r = atr.Resolver('name')
     with open(log_path, "r") as f:
         for line in f:
-            task_id1, parent_id1, taskdata_path = line.strip().split("\t")
-            taskdata, task_id2, parent_id2 = load_task_data(taskdata_path)
+            task_id1, parent_id1, taskdata_relpath = line.strip().split("\t")
+            taskdata, task_id2, parent_id2 = load_task_data(task_dir, taskdata_relpath)
             assert task_id1 == str(task_id2)
             assert parent_id1 == str(parent_id2)
 
@@ -633,34 +641,36 @@ def initial_state(pars, ham):
 if __name__ == "__main__":
     # Parse command line arguments.
     args = parse_args()
-    # setup_logging is for the logging module, that is concerned with text
-    # output (think print statements). It has nothing to do with the log file
-    # of the Distree.
-    setup_logging("./log/")
 
     #Name for this tree
     root_id = "testjob_MPS"
 
+    #A folder where all the job's data will be stored
+    task_dir = "./{}/".format(root_id)
+    
     # This log file keeps track of the tree.
-    logfile = "./log/{}.txt".format(root_id)
+    log_path = os.path.join(task_dir, "{}.txt".format(root_id))
 
-    data_dir = "./data/"
+    # setup_logging is for the logging module, that is concerned with text
+    # output (think print statements). It has nothing to do with the log file
+    # of the Distree.
+    setup_logging(os.path.join(task_dir, "scriptlogs/"))
 
     # Create the tree object, telling it where the logfile lives and how
     # to run tasks (by running this script with --child).
-    dtree = dst.Distree_Local(logfile, sys.argv[0], scriptargs=['--child'])
+    dtree = dst.Distree_Local(log_path, sys.argv[0], scriptargs=['--child'])
 
     # NOTE: This script is designed so that it can schedule the root job and
     # also child jobs, depending on the supplied command-line arguments.
     if args.show:
         # Print the tree from saved data
-        top = build_tree(logfile)
+        top = build_tree(log_path, task_dir)
         logging.info(atr.RenderTree(top))
     elif args.child:
         # Assume the first argument is a taskdata file for a child job.
         # This means the task should be run in the current process,
         # rather than be scheduled for later.
-        run_task(dtree, data_dir, args.taskfile)
+        run_task(dtree, task_dir, args.taskfile)
     elif args.taskfile:
         # Assume the argument is a taskdata file to be used for a root job
         dtree.schedule_task(root_id, None, args.taskfile)
@@ -678,7 +688,7 @@ if __name__ == "__main__":
             'time_evo_pars_path': 'confs/time_evo_pars.yaml',
             'branch_pars_path': 'confs/branch_pars.yaml'
         }
-        taskdata_path = get_taskdata_path(data_dir, root_id)
-        save_task_data(taskdata_path, init_task_data, root_id, None)
+        taskdata_relpath = get_taskdata_relpath(root_id)
+        save_task_data(task_dir, taskdata_relpath, init_task_data, root_id, None)
         # The following schedules a job (it will be run in a different process)
-        dtree.schedule_task(root_id, None, taskdata_path)
+        dtree.schedule_task(root_id, None, taskdata_relpath)
