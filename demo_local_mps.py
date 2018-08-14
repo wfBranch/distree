@@ -647,11 +647,13 @@ if __name__ == "__main__":
     # Parse command line arguments.
     args = parse_args()
 
-    #Name for this tree
+    # Name for this tree
     root_id = "testjob_MPS"
 
-    #A folder where all the job's data will be stored
-    job_dir = "./{}/".format(root_id)
+    # A folder where all the job's data will be stored.
+    # This currently uses the working dir, but this needs to change
+    # on the cluster.
+    job_dir = os.path.join(os.getcwd(),"{}/".format(root_id))
     
     # This log file keeps track of the tree.
     log_path = os.path.join(job_dir, "{}.txt".format(root_id))
