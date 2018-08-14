@@ -6,9 +6,9 @@ Created on Wed Jul 25 16:10:00 2018
 
 TODO:
 * Save tensors rather than evoMPS object
-* Always use full paths (conf YAML files rely on relative paths right now)..?
 * Store child task info in parent taskdata (redundant, but poss. useful)
 * Make it possible to stop all tasks by e.g. deleting a canary file.
+* Make it possible to modify conf params on the command line (e.g. --confmods=...)
 """
 
 import scipy as sp
