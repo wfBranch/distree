@@ -17,6 +17,7 @@ import numpy.random as rnd
 import sys
 import os
 import pathlib
+import shutil
 import distree as dst
 import anytree as atr
 import yaml
@@ -634,6 +635,8 @@ def parse_args():
     parser.add_argument('taskfile', type=str, nargs="?", default="")
     parser.add_argument('--child', dest='child', default=False,
                         action='store_true')
+    parser.add_argument('--confdir', type=str, nargs="?", 
+                        dest='confdir', default="./conf")
     parser.add_argument('--show', dest='show', default=False,
                         action='store_true')
     args = parser.parse_args()
@@ -669,13 +672,24 @@ if __name__ == "__main__":
         top = build_tree(log_path, task_dir)
         logging.info(atr.RenderTree(top))
     elif args.child:
-        # Assume the first argument is a taskdata file for a child job.
+        # Assume the first argument is the path to a taskdata file 
+        # (relative to task_dir) for a child job.
         # This means the task should be run in the current process,
         # rather than be scheduled for later.
         run_task(dtree, task_dir, args.taskfile)
     elif args.taskfile:
         # Assume the argument is a taskdata file to be used for a root job
-        dtree.schedule_task(root_id, None, args.taskfile)
+        taskdata_path = os.path.join(task_dir, args.taskfile)
+        if os.path.isfile(taskdata_path):
+            logging.info("Found {}".format(taskdata_path))
+            taskdata_relpath = args.taskfile
+        else:
+            logging.error("{} was not found under {}".format(args.taskfile, 
+                                                                    task_dir)
+                            )
+            taskdata_relpath = ""
+        
+        dtree.schedule_task(root_id, None, taskdata_relpath)
     else:
         # Save a simple initial taskdata file and schedule a root job.
         init_task_data = {
@@ -690,6 +704,14 @@ if __name__ == "__main__":
             'time_evo_pars_path': 'confs/time_evo_pars.yaml',
             'branch_pars_path': 'confs/branch_pars.yaml'
         }
+        if args.confdir:
+            destconfdir = os.path.join(task_dir, "confs")
+            logging.info(
+                "Copying conf directory {} to {}".format(args.confdir,
+                                                        destconfdir)
+                        )
+            shutil.copytree(args.confdir, destconfdir)
+
         taskdata_relpath = get_taskdata_relpath(root_id)
         save_task_data(task_dir, taskdata_relpath, init_task_data, root_id, None)
         # The following schedules a job (it will be run in a different process)
