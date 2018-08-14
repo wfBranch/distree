@@ -48,7 +48,7 @@ class Distree_Base():
         #Log centrally
         self.write_log_entry(task_id, parent_id, taskdata_path)
 
-        #Call the scheduler to schedule the task (it may not run until later)
+        #Call the scheduler to schedule the task (it might not run until later)
         raise NotImplementedError
 
 
