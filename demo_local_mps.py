@@ -494,7 +494,7 @@ def build_tree(log_path):
     return top
 
 
-def setup_logging():
+def setup_logging(script_log_dir):
     # Set up logging, both to stdout and to a file.
     # First get the logger and set the level to INFO
     logger = logging.getLogger()
@@ -507,11 +507,11 @@ def setup_logging():
     datetime_str = datetime.datetime.strftime(datetime.datetime.now(),
                                               '%Y-%m-%d_%H-%M-%S')
     title_str = ('{}_{}'.format(filename, datetime_str))
-    logfilename = "log/{}.log".format(title_str)
+    logfilename = os.path.join(script_log_dir, "{}.log".format(title_str))
     i = 0
     while os.path.exists(logfilename):
         i += 1
-        logfilename = "log/{}_{}.log".format(title_str, i)
+        logfilename = os.path.join(script_log_dir, "{}_{}.log".format(title_str, i))
     # Create a handler for the file.
     os.makedirs(os.path.dirname(logfilename), exist_ok=True)
     filehandler = logging.FileHandler(logfilename, mode='w')
@@ -631,7 +631,7 @@ if __name__ == "__main__":
     # setup_logging is for the logging module, that is concerned with text
     # output (think print statements). It has nothing to do with the log file
     # of the Distree.
-    setup_logging()
+    setup_logging("./log/")
 
     #Name for this tree
     root_id = "testjob_MPS"
@@ -640,7 +640,7 @@ if __name__ == "__main__":
     logfile = "./log/{}.txt".format(root_id)
 
     data_dir = "./data/"
-    pathlib.Path(data_dir).parent.mkdir(parents=True, exist_ok=True)
+    pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
 
     # Create the tree object, telling it where the logfile lives and how
     # to run tasks (by running this script with --child).
