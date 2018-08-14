@@ -1,7 +1,7 @@
 hamiltonian: double_heisenberg_ising
 qn: 4
-N: 10
-stiffness: 10
+N: 40
+stiffness: 8
 chi: 2.0
 omega: 1.0
 bond_dim: 20

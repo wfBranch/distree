@@ -273,14 +273,17 @@ class Distree_Demo(dst.Distree):
 
     # J: Decides whether we should *check* for branches by running Dan's code
     # We don't do this every timestep because it is too computationally costly
-    def should_branch(self, state, t, prev_branching_time, taskdata):
+    def should_branch(self, state, t, t_increment, prev_branching_time, taskdata):
         #return False  # DEBUGGING
         # TODO This should be replaced with some more sophisticated check of
         # when to branch, based also on properties of the state.
-        #res = (0.2 > t > 0.1 and t - prev_branching_time > 0.1) # DEBUGGING
-        res = ((2.15 > t >= 1.99 and t - prev_branching_time > 1)
-               or
-               (4.15 > t >= 3.99 and t - prev_branching_time > 1))
+        # res = ((2.15 > t >= 1.99 and t - prev_branching_time > 1)
+        #         or
+        #         (4.15 > t >= 3.99 and t - prev_branching_time > 1))
+        branch_pars = self.load_yaml(taskdata["branch_pars_path"])
+        branch_check_time = branch_pars["branch_check_time"]
+        # We check for branches exactly once after each amount of time branch_check_time 
+        res =  0  < (t-prev_branching_time) % branch_check_time <=  t_increment /branch_check_time
         return res
 
     # J: This is a general function for doing a single step of real-time
@@ -368,7 +371,7 @@ class Distree_Demo(dst.Distree):
                 self.save_measurement_data(state, taskdata, meas)
                 prev_checkpoint = t
 
-            if self.should_branch(state, t, prev_branching_time, taskdata):
+            if self.should_branch(state, t, t_increment, prev_branching_time, taskdata):
                 logging.info("Task {} branching.".format(task_id))
                 num_branches = self.branch(state, t, taskdata, task_id)
                 if num_branches > 1:
@@ -645,7 +648,7 @@ if __name__ == "__main__":
             'parent_id': None, 
             'parent_treepath': '',
             'branch_num': 0, 
-            't_max': 1.99,#6.0,
+            't_max': 6.0,
             'coeff': 1.0,
             'measurement_frequency': 0.05,
             'checkpoint_frequency': 100.,#0.1,   #Does this automatically take data at the end?
