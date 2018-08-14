@@ -669,7 +669,7 @@ if __name__ == "__main__":
             'parent_id': None, 
             'parent_treepath': '',
             'branch_num': 0, 
-            't_max': 0.012, #6.0,
+            't_max': 6.0,
             'coeff': 1.0,
             'measurement_frequency': 0.05,
             'checkpoint_frequency': 100.,#0.1,   # If this is larger than t_max, the only time data is taken is the beginning and end of a task (i.e., immediately before and after branching events)
