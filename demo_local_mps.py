@@ -8,6 +8,7 @@ TODO:
 * Save tensors rather than evoMPS object
 * Always use full paths (conf YAML files rely on relative paths right now)..?
 * Store child task info in parent taskdata (redundant, but poss. useful)
+* Make it possible to stop all tasks by e.g. deleting a canary file.
 """
 
 import scipy as sp
@@ -189,6 +190,7 @@ def get_taskdata_path(data_dir, task_id):
 
 
 def save_task_data(taskdata_path, data, task_id, parent_id):
+    pathlib.Path(taskdata_path).parent.mkdir(parents=True, exist_ok=True)
     data.update(task_id=task_id, parent_id=parent_id)
     dump_yaml(data, taskdata_path)
 
@@ -643,7 +645,6 @@ if __name__ == "__main__":
     logfile = "./log/{}.txt".format(root_id)
 
     data_dir = "./data/"
-    pathlib.Path(data_dir).mkdir(parents=True, exist_ok=True)
 
     # Create the tree object, telling it where the logfile lives and how
     # to run tasks (by running this script with --child).
