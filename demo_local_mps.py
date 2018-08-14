@@ -4,6 +4,10 @@ Created on Wed Jul 25 16:10:00 2018
 
 @author: Ash & Markus
 
+TODO:
+* Save tensors rather than evoMPS object
+* Always use full paths (conf YAML files rely on relative paths right now)..?
+* Store child task info in parent taskdata (redundant, but poss. useful)
 """
 
 import scipy as sp
@@ -451,17 +455,15 @@ def branch(dtree, data_dir, state, t, taskdata, task_id):
         # NOTE: We could add more child info to the parent taskdata here
     return num_children
 
-# End of custom Distree subclass #
-
 
 # Build an anytree from saved data by parsing the log file.
-def build_tree(dtree):
+def build_tree(log_path):
     top = None
     r = atr.Resolver('name')
-    with open(dtree.log_path, "r") as f:
+    with open(log_path, "r") as f:
         for line in f:
             task_id1, parent_id1, taskdata_path = line.strip().split("\t")
-            taskdata, task_id2, parent_id2 = dtree.load_task_data(taskdata_path)
+            taskdata, task_id2, parent_id2 = load_task_data(taskdata_path)
             assert task_id1 == str(task_id2)
             assert parent_id1 == str(parent_id2)
 
@@ -630,13 +632,15 @@ if __name__ == "__main__":
     # output (think print statements). It has nothing to do with the log file
     # of the Distree.
     setup_logging()
+
+    #Name for this tree
+    root_id = "testjob_MPS"
+
     # This log file keeps track of the tree.
-    logfile = "./log/distreelog.txt"
+    logfile = "./log/{}.txt".format(root_id)
 
     data_dir = "./data/"
     pathlib.Path(data_dir).parent.mkdir(parents=True, exist_ok=True)
-
-    root_id = "testjob_MPS"
 
     # Create the tree object, telling it where the logfile lives and how
     # to run tasks (by running this script with --child).
@@ -646,7 +650,7 @@ if __name__ == "__main__":
     # also child jobs, depending on the supplied command-line arguments.
     if args.show:
         # Print the tree from saved data
-        top = build_tree(dtree)
+        top = build_tree(logfile)
         logging.info(atr.RenderTree(top))
     elif args.child:
         # Assume the first argument is a taskdata file for a child job.
