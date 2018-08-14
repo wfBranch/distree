@@ -1,7 +1,9 @@
 i1: 0 #if 0, will be set autmatically, e.g., the first third of the lattice
 i2: 0 #if 0, will be set autmatically, e.g., the second third of the lattice
 system_for_records: BC
-max_branch_ratio: 6 # Max number of child branches to create per parent.  If 0, there's no maximum
+max_branch_ratio: 10 # Max number of child branches to create per parent.  If 0, there's no maximum
+branch_check_time: 2. # How much time to wait before checking for branches again
+
 eps_ker_C: !!float 5e-4
 coeff_tol: !!float 1e-6
 degeneracy_tol: !!float 1e-4
