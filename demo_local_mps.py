@@ -55,6 +55,95 @@ from find_branches import find_branches
 # to look for branches yet (a computationally costly process).  When that returns
 # true, branch() is executed to so.
 
+#------------------------------------
+
+# J: Returns a single-qubit pure state (length-2 list) corresponding 
+# to a point on the Bloch sphere
+def bloch_state(theta,phi):
+    return [sp.cos(theta/2)+0j, sp.sin(theta/2)*sp.exp(1j*phi)]
+
+
+# J: Constructs the NN Hamiltonian as a list of N two-site operators, to
+# be fed into the evoltution algorithm, based on the parameters. Calls 
+# matica.ham_heisenberg_ising()
+def get_hamiltonian(pars):
+    N = pars["N"]    # System size
+    hamiltonian = pars["hamiltonian"]  # Name of the model
+    if hamiltonian.strip().lower() == "double_heisenberg_ising":
+        chi = pars["chi"]
+        omega = pars["omega"]
+        stiffness = pars["stiffness"]
+        J = -N*stiffness
+        ham = matica.ham_heisenberg_ising(J, omega, chi, N)
+    else:
+        msg = "Unknown Hamiltonian: {}".format(hamiltonian)
+        raise NotImplementedError(msg)
+
+    return ham
+
+# J: Same as get_hamiltonian(), but returns the heisenberg and ising Hamiltonians 
+# separately so that, for instance, we can calculate <H_Heisenberg>
+def get_hamiltonian_decomp(pars):
+    N = pars["N"]    # System size
+    hamiltonian = pars["hamiltonian"]  # Name of the model
+    if hamiltonian.strip().lower() == "double_heisenberg_ising":
+        chi = pars["chi"]
+        omega = pars["omega"]
+        stiffness = pars["stiffness"]
+        J = -N*stiffness
+        # The Hamiltonian is the sum of two parts:
+        # The double Heisengberg chain,
+        hamDH = matica.ham_heisenberg_ising(J, 0, 0, N)
+        # the transverse-field Ising between the chains.
+        hamTVI = matica.ham_heisenberg_ising(0, omega, chi, N)
+    else:
+        msg = "Unknown Hamiltonian: {}".format(hamiltonian)
+        raise NotImplementedError(msg)
+
+    return hamDH, hamTVI
+
+
+# J: This is only called by a task when it is the first task, i.e., the task
+# corresponding to the root of the tree and the beginning of the simulation.  
+# It constructs the evoMPS object and initializes it with an initial state 
+# determined by the parameters (the classical configuraion, magnons, etc.)
+def initial_state(pars, ham):
+    qn = pars["qn"]  # Local state space dimension
+    N = pars["N"]    # System size
+    zero_tol = pars["zero_tol"]  # Tolerance in evoMPS
+    sanity_checks = pars["sanity_checks"]  # Sanity checks in evoMPS
+    auto_truncate = pars["auto_truncate"]  # Automatic truncation in evoMPS
+    th1  = pars["theta1"]  # Angle for the initial state
+    phi1 = pars["phi1"]    # Angle for the initial state
+    th2  = pars["theta2"]  # Angle for the initial state
+    phi2 = pars["phi2"]    # Angle for the initial state
+    create_magnons = pars["create_magnons"]  #whether to create magnons in the initial state to act as an environment
+    magnon_parameters = pars["magnon_parameters"]  #describes which chain (S or T) each magnon is on, and its relative momentum
+
+    initial_bond_dim = 2**len(magnon_parameters) if create_magnons else 1
+
+
+    D = [initial_bond_dim]*(N+1)  # The initial state is a product state, and then magnons are added.  Too many dim?
+    q = [qn]*(N+1)
+    s = tdvp.EvoMPS_TDVP_Generic(N, D, q, ham)
+    s.zero_tol = zero_tol
+    s.sanity_checks = sanity_checks
+
+    init_state = sp.kron(bloch_state(th1, phi1), bloch_state(th2, phi2))
+    s.set_state_product([init_state]*N)
+
+    if create_magnons:
+        for magnon in magnon_parameters:
+            # magnon['operator'] is 0,1,2,3,4, or 5
+            # matica.mag_ops = [Sx, Sy, Sz, Tx, Ty, Tz]
+            magnon_operator = matica.mag_ops[magnon['operator']] 
+            magnon_momentum = 2*sp.pi*magnon['relative_momentum']/N
+            s.apply_op_MPO(matica.magnon_MPO(magnon_operator,magnon_momentum,N),1)
+
+    s.update(auto_truncate=auto_truncate)
+    return s
+
+
 class Meas():
     def __init__(self, N, Dmax):
         self.N = N
@@ -549,93 +638,6 @@ def parse_args():
                         action='store_true')
     args = parser.parse_args()
     return args
-
-
-# J: Returns a single-qubit pure state (length-2 list) corresponding 
-# to a point on the Bloch sphere
-def bloch_state(theta,phi):
-    return [sp.cos(theta/2)+0j, sp.sin(theta/2)*sp.exp(1j*phi)]
-
-
-# J: Constructs the NN Hamiltonian as a list of N two-site operators, to
-# be fed into the evoltution algorithm, based on the parameters. Calls 
-# matica.ham_heisenberg_ising()
-def get_hamiltonian(pars):
-    N = pars["N"]    # System size
-    hamiltonian = pars["hamiltonian"]  # Name of the model
-    if hamiltonian.strip().lower() == "double_heisenberg_ising":
-        chi = pars["chi"]
-        omega = pars["omega"]
-        stiffness = pars["stiffness"]
-        J = -N*stiffness
-        ham = matica.ham_heisenberg_ising(J, omega, chi, N)
-    else:
-        msg = "Unknown Hamiltonian: {}".format(hamiltonian)
-        raise NotImplementedError(msg)
-
-    return ham
-
-# J: Same as get_hamiltonian(), but returns the heisenberg and ising Hamiltonians 
-# separately so that, for instance, we can calculate <H_Heisenberg>
-def get_hamiltonian_decomp(pars):
-    N = pars["N"]    # System size
-    hamiltonian = pars["hamiltonian"]  # Name of the model
-    if hamiltonian.strip().lower() == "double_heisenberg_ising":
-        chi = pars["chi"]
-        omega = pars["omega"]
-        stiffness = pars["stiffness"]
-        J = -N*stiffness
-        # The Hamiltonian is the sum of two parts:
-        # The double Heisengberg chain,
-        hamDH = matica.ham_heisenberg_ising(J, 0, 0, N)
-        # the transverse-field Ising between the chains.
-        hamTVI = matica.ham_heisenberg_ising(0, omega, chi, N)
-    else:
-        msg = "Unknown Hamiltonian: {}".format(hamiltonian)
-        raise NotImplementedError(msg)
-
-    return hamDH, hamTVI
-
-
-# J: This is only called by a task when it is the first task, i.e., the task
-# corresponding to the root of the tree and the beginning of the simulation.  
-# It constructs the evoMPS object and initializes it with an initial state 
-# determined by the parameters (the classical configuraion, magnons, etc.)
-def initial_state(pars, ham):
-    qn = pars["qn"]  # Local state space dimension
-    N = pars["N"]    # System size
-    zero_tol = pars["zero_tol"]  # Tolerance in evoMPS
-    sanity_checks = pars["sanity_checks"]  # Sanity checks in evoMPS
-    auto_truncate = pars["auto_truncate"]  # Automatic truncation in evoMPS
-    th1  = pars["theta1"]  # Angle for the initial state
-    phi1 = pars["phi1"]    # Angle for the initial state
-    th2  = pars["theta2"]  # Angle for the initial state
-    phi2 = pars["phi2"]    # Angle for the initial state
-    create_magnons = pars["create_magnons"]  #whether to create magnons in the initial state to act as an environment
-    magnon_parameters = pars["magnon_parameters"]  #describes which chain (S or T) each magnon is on, and its relative momentum
-
-    initial_bond_dim = 2**len(magnon_parameters) if create_magnons else 1
-
-
-    D = [initial_bond_dim]*(N+1)  # The initial state is a product state, and then magnons are added.  Too many dim?
-    q = [qn]*(N+1)
-    s = tdvp.EvoMPS_TDVP_Generic(N, D, q, ham)
-    s.zero_tol = zero_tol
-    s.sanity_checks = sanity_checks
-
-    init_state = sp.kron(bloch_state(th1, phi1), bloch_state(th2, phi2))
-    s.set_state_product([init_state]*N)
-
-    if create_magnons:
-        for magnon in magnon_parameters:
-            # magnon['operator'] is 0,1,2,3,4, or 5
-            # matica.mag_ops = [Sx, Sy, Sz, Tx, Ty, Tz]
-            magnon_operator = matica.mag_ops[magnon['operator']] 
-            magnon_momentum = 2*sp.pi*magnon['relative_momentum']/N
-            s.apply_op_MPO(matica.magnon_MPO(magnon_operator,magnon_momentum,N),1)
-
-    s.update(auto_truncate=auto_truncate)
-    return s
 
 
 if __name__ == "__main__":
