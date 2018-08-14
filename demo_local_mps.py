@@ -294,8 +294,11 @@ def should_branch(state, t, t_increment, prev_branching_time, taskdata):
     #         (4.15 > t >= 3.99 and t - prev_branching_time > 1))
     branch_pars = load_yaml(taskdata["branch_pars_path"])
     branch_check_time = branch_pars["branch_check_time"]
-    # We check for branches exactly once after each amount of time branch_check_time 
-    res =  0  < (t-prev_branching_time) % branch_check_time <=  t_increment /branch_check_time
+    max_branch_ratio = branch_pars["max_branch_ratio"]
+    if max_branch_ratio == 1:
+        return False
+    # We check for branches after an amount of time branch_check_time 
+    res  = t-prev_branching_time > branch_check_time + (t_increment*0.5) # automaticaly must be  < branch_check_time
     return res
 
 
@@ -387,7 +390,7 @@ def run_task(dtree, data_dir, taskdata_path):
 
         if should_branch(state, t, t_increment, prev_branching_time, taskdata):
             logging.info("Task {} branching.".format(task_id))
-            num_branches = branch(dtree, state, t, taskdata, task_id)
+            num_branches = branch(dtree, data_dir, state, t, taskdata, task_id)
             if num_branches > 1:
                 logging.info("Task {}, branched into {} children."
                                 .format(task_id, num_branches))
@@ -450,7 +453,7 @@ def branch(dtree, data_dir, state, t, taskdata, task_id):
         save_task_data(child_taskdata_path, child_taskdata, child_id, task_id)
         # This will add each child task to the log, and schedule them to be
         # run. How they are run is up to the scheduler.
-        schedule_task(child_id, task_id, child_taskdata_path)
+        dtree.schedule_task(child_id, task_id, child_taskdata_path)
 
         # NOTE: We could add more child info to the parent taskdata here
     return num_children
@@ -669,7 +672,7 @@ if __name__ == "__main__":
             't_max': 6.0,
             'coeff': 1.0,
             'measurement_frequency': 0.05,
-            'checkpoint_frequency': 100.,#0.1,   #Does this automatically take data at the end?
+            'checkpoint_frequency': 100.,#0.1,   # If this is larger than t_max, the only time data is taken is the beginning and end of a task (i.e., immediately before and after branching events)
             'initial_pars_path': 'confs/initial_pars.yaml',
             'time_evo_pars_path': 'confs/time_evo_pars.yaml',
             'branch_pars_path': 'confs/branch_pars.yaml'
