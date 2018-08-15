@@ -72,9 +72,9 @@ class Distree_Local(Distree_Base):
 
 
 class Distree_PBS(Distree_Base):
-    def __init__(self, log_path, qname, scriptpath, 
-                scriptargs='', python_command=sys.executable, 
-                res_list='', job_env=''):
+    def __init__(self, log_path, scriptpath, qname,
+                scriptargs=[], python_command=sys.executable, 
+                res_list='', job_env='', working_dir=os.getcwd()):
         super().__init__(log_path)
 
         self.qname = qname
@@ -83,16 +83,19 @@ class Distree_PBS(Distree_Base):
         self.python_command = python_command
         self.res_list = res_list
         self.job_env = job_env
-        self.jobname = os.path.basename(scriptpath)
+        self.working_dir = working_dir
 
     def schedule_task(self, task_id, parent_id, taskdata_path):
         #Log centrally
         self.write_log_entry(task_id, parent_id, taskdata_path)
         
         scmd = '%s %s %s %s' % (self.python_command, self.scriptpath, 
-                                taskdata_path, self.scriptargs)
+                                taskdata_path, " ".join(self.scriptargs))
 
-        qsub_cmd = 'qsub -N %s -q %s -k oe' % (quote(self.jobname), self.qname)
+        jobname = task_id
+        qsub_cmd = 'qsub -d %s -N %s -q %s' % (quote(self.working_dir), 
+                                                quote(jobname), 
+                                                self.qname)
         if len(self.res_list) > 0:
             qsub_cmd = qsub_cmd + ' -l %s' % self.res_list
 
