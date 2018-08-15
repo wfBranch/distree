@@ -643,6 +643,8 @@ def parse_args():
                         dest='root_id', default='')
     parser.add_argument('--show', dest='show', default=False,
                         action='store_true')
+    parser.add_argument('--scheduler', dest='sched', default='PBS',
+                        choices=['PBS','local'])
     args = parser.parse_args()
     return args
 
@@ -675,11 +677,20 @@ if __name__ == "__main__":
 
     # Create the tree object, telling it where the logfile lives and how
     # to run tasks (by running this script with --child).
-    dtree = dst.Distree_Local(log_path, sys.argv[0], 
-                    scriptargs=['--child', 
-                                '--root_id', root_id,
-                                '--jobdir', job_dir]
-                    )
+    scriptargs = ['--child', 
+                    '--root_id', root_id,
+                    '--jobdir', job_dir,
+                    '--scheduler', args.sched
+                 ]
+    if args.sched == 'local':
+        dtree = dst.Distree_Local(log_path, sys.argv[0], scriptargs=scriptargs)
+    elif args.sched == 'PBS':
+        dtree = dst.Distree_PBS(log_path, sys.argv[0], 'qtest', 
+                                scriptargs=scriptargs,
+                                python_command='python',
+                                res_list='walltime=01:00:00',
+                                job_env='MKL_NUM_THREADS=24,OMP_NUM_THREADS=1'
+                                )
 
     # NOTE: This script is designed so that it can schedule the root job and
     # also child jobs, depending on the supplied command-line arguments.
