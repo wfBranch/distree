@@ -103,6 +103,6 @@ class Distree_PBS(Distree_Base):
             qsub_cmd = qsub_cmd + ' -v %s' % self.job_env
 
         cmd = 'echo %s | %s' % (quote(scmd), qsub_cmd)
-        logging.info('Running: ', cmd)
+        logging.info('Running: %s' % cmd)
         p = subprocess.run(cmd, shell=True)
         p.check_returncode()
