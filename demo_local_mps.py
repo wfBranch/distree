@@ -396,6 +396,8 @@ def store_state_h5(job_dir, state, **kwargs):
         dset = f.create_dataset('tensors_flat', (state.N,), dtype=dt)
         for j in range(state.N):
             dset[j] = state.A[j+1].ravel()
+    # evoMPS-specific logging to help confirm successful load and save
+    logging.info("Saved state with energy: {}".format(state.H_expect.real))
     return relpath
 
 
@@ -410,6 +412,8 @@ def load_state_h5(job_dir, state_relpath, pars):
         for j in range(N):
             tensors.append(tensors_flat[j].reshape(q[j],D[j],D[j+1]))
         state = state_from_tensors(tensors, pars)
+        # evoMPS-specific logging to help confirm successful load and save
+        logging.info("Loaded state with energy: {}".format(state.H_expect.real))
     return state
 
 
