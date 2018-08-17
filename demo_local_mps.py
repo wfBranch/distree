@@ -17,6 +17,7 @@ import numpy as np
 import numpy.random as rnd
 import sys
 import os
+import time
 import pathlib
 import shutil
 import distree as dst
@@ -825,6 +826,7 @@ if __name__ == "__main__":
         # This means the task should be run in the current process,
         # rather than be scheduled for later.
         run_task(dtree, job_dir, args.taskfile)
+        time.sleep(5)
     elif args.taskfile:
         # Assume the argument is a taskdata file to be used for a root job
         taskdata_path = os.path.join(job_dir, args.taskfile)
