@@ -462,9 +462,14 @@ def run_task(dtree, job_dir, taskdata_relpath):
     prev_branching_time = min(state_relpaths)
     prev_measurement_time = get_last_measurement_time(job_dir, taskdata)
 
-    logging.info("Starting the time evolution loop for task {}."
-                    .format(task_id))
+    logging.info(
+        "Starting the time evolution loop for task {}.".format(task_id)
+    )
     while t < taskdata["t_max"]:
+        if not dtree.canary_is_alive():
+            logging.warn("Canary has died. Aborting task {}.".format(task_id))
+            break
+
         state, t_increment = evolve_state(state, job_dir, taskdata)
         t += t_increment
         # Many times increments are multiples of powers of ten, but adding
@@ -736,6 +741,9 @@ if __name__ == "__main__":
     # This log file keeps track of the tree.
     log_path = os.path.join(job_dir, "{}.txt".format(root_id))
 
+    # The job will be aborted if the canary file is deleted.
+    canary_path = os.path.join(job_dir, "{}.canary".format(root_id))
+
     # setup_logging is for the logging module, that is concerned with text
     # output (think print statements). It has nothing to do with the log file
     # of the Distree.
@@ -749,10 +757,17 @@ if __name__ == "__main__":
                     '--scheduler', args.sched
                  ]
     if args.sched == 'local':
-        dtree = dst.Distree_Local(log_path, sys.argv[0], scriptargs=scriptargs)
+        dtree = dst.Distree_Local(
+            log_path, 
+            sys.argv[0], 
+            scriptargs=scriptargs,
+            canary_path=canary_path
+        )
     elif args.sched == 'PBS':
-        dtree = dst.Distree_PBS(log_path, sys.argv[0], 'qtest', 
+        dtree = dst.Distree_PBS(
+            log_path, sys.argv[0], 'qtest', 
                                 scriptargs=scriptargs,
+            canary_path=canary_path,
                                 python_command='python',
                                 res_list='walltime=01:00:00',
                                 job_env='MKL_NUM_THREADS=24,OMP_NUM_THREADS=1'
