@@ -640,7 +640,16 @@ def check_and_modify_conf(job_dir, conf_relpath, ovr):
         for key, val in ovr.items():
             # Key must exist in file. Assume type in file is most general
             # allowed for this parameter.
-            pars[key] = type(pars[key])(val)
+            oldval = pars[key]
+            pars[key] = type(oldval)(val)
+            logging.info(
+                "Changed parameter {} from {} to {} in {}.".format(
+                    key,
+                    oldval,
+                    val,
+                    conf_relpath
+                )
+            )
         dump_yaml(pars, job_dir, conf_relpath)
         
 
