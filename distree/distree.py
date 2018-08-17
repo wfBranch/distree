@@ -147,14 +147,14 @@ class Distree_PBS(Distree_Base):
             stream_name = task_id
 
         if self.stream_dir:
-            qsub_cmd += ' -o %s' % os.path.join(
+            qsub_cmd += ' -o %s' % quote(os.path.join(
                 self.stream_dir,
                 '%s.o' % stream_name
-            )
-            qsub_cmd += ' -e %s' % os.path.join(
+            ))
+            qsub_cmd += ' -e %s' % quote(os.path.join(
                 self.stream_dir,
                 '%s.e' % stream_name
-            )
+            ))
 
         cmd = 'echo %s | %s' % (quote(scmd), qsub_cmd)
         logging.info('Running: %s' % cmd)
