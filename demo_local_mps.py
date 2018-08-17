@@ -146,6 +146,25 @@ def initial_state(pars, ham):
     return s
 
 
+def state_from_tensors(tensors, pars):
+    qn = pars["qn"]  # Local state space dimension
+    N = pars["N"]    # System size
+    zero_tol = pars["zero_tol"]  # Tolerance in evoMPS
+    sanity_checks = pars["sanity_checks"]  # Sanity checks in evoMPS
+
+    ham = get_hamiltonian(pars)
+
+    N = len(tensors)
+    q = [qn]*(N+1)
+    s = tdvp.EvoMPS_TDVP_Generic(N, np.ones(N+1,dtype=int), q, ham)
+    s.zero_tol = zero_tol
+    s.sanity_checks = sanity_checks
+
+    A = [None] + [tensors[j] for j in range(N)]
+    s.set_state_from_tensors(A)
+    
+    return s
+
 class Meas():
     def __init__(self, N, Dmax):
         self.N = N
@@ -357,24 +376,40 @@ def save_measurement_data(job_dir, state, taskdata, meas):
                 dset[off + j, ...] = buf[j]
 
 
-def get_state_relpath(task_id, t):
-    return "data/{}_t{}.p".format(task_id, t)
+def get_state_relpath_h5(task_id, t):
+    return "data/{}_state_t{}.h5".format(task_id, t)
 
 
-# J: Saves the current quantum state (currently, an evoMPS object) to a 
-# pickle file.  (Single-time snapshot, not a trajectory)
-def store_state(job_dir, state, **kwargs):
-    relpath = get_state_relpath(**kwargs)
+# Saves the current quantum state to an HDF5 file. 
+# (Single-time snapshot, not a trajectory)
+def store_state_h5(job_dir, state, **kwargs):
+    relpath = get_state_relpath_h5(**kwargs)
     path = os.path.join(job_dir, relpath)
-    with open(path, "wb") as f:
-        pickle.dump(state, f)
+    with h5py.File(path, "w") as f:
+        dset = f.create_dataset('q', (state.N,), dtype=int)
+        dset[:] = state.q[1:]
+
+        dset = f.create_dataset('D', (state.N+1,), dtype=int)
+        dset[:] = state.D
+        
+        dt = h5py.special_dtype(vlen=state.A[1].dtype)
+        dset = f.create_dataset('tensors_flat', (state.N,), dtype=dt)
+        for j in range(state.N):
+            dset[j] = state.A[j+1].ravel()
     return relpath
 
 
-def load_state(job_dir, state_relpath):
+def load_state_h5(job_dir, state_relpath, pars):
     path = os.path.join(job_dir, state_relpath)
-    with open(path, "rb") as f:
-        state = pickle.load(f)
+    with h5py.File(path, "r") as f:
+        tensors_flat = f['tensors_flat']
+        q = f['q']
+        D = f['D']
+        N = len(q)
+        tensors = []
+        for j in range(N):
+            tensors.append(tensors_flat[j].reshape(q[j],D[j],D[j+1]))
+        state = state_from_tensors(tensors, pars)
     return state
 
 
@@ -423,14 +458,15 @@ def run_task(dtree, job_dir, taskdata_relpath):
     taskdata, task_id, parent_id = load_task_data(job_dir, taskdata_relpath)
     state_relpaths = taskdata.get("state_paths", {})
 
+    initial_pars = load_yaml(job_dir, taskdata["initial_pars_path"])
+
     # Check if the dictionary of states at different times is empty.
     if not state_relpaths:
         logging.info(
           "The task {} has no states in it, so we initialize.".format(task_id)
           )
-        initial_pars = load_yaml(job_dir, taskdata["initial_pars_path"])
         s = initial_state(initial_pars, get_hamiltonian(initial_pars))
-        s_path = store_state(job_dir, s, t=0.0, task_id=task_id)
+        s_path = store_state_h5(job_dir, s, t=0.0, task_id=task_id)
         state_relpaths[0.0] = s_path
         taskdata["state_paths"] = state_relpaths
 
@@ -457,7 +493,7 @@ def run_task(dtree, job_dir, taskdata_relpath):
     prev_checkpoint = max(state_relpaths)
     t = prev_checkpoint  # The current time in the evolution.
     state_relpath = state_relpaths[t]
-    state = load_state(job_dir, state_relpath)
+    state = load_state_h5(job_dir, state_relpath, initial_pars)
     prev_branching_time = min(state_relpaths)
     prev_measurement_time = get_last_measurement_time(job_dir, taskdata)
 
@@ -486,7 +522,7 @@ def run_task(dtree, job_dir, taskdata_relpath):
 
         if t - prev_checkpoint >= taskdata["checkpoint_frequency"]:
             logging.info("Task {} checkpointing.".format(task_id))
-            state_relpaths[t] = store_state(job_dir, state, t=t, task_id=task_id)
+            state_relpaths[t] = store_state_h5(job_dir, state, t=t, task_id=task_id)
             save_measurement_data(job_dir, state, taskdata, meas)
             prev_checkpoint = t
 
@@ -506,7 +542,7 @@ def run_task(dtree, job_dir, taskdata_relpath):
     # Always store the state at the end of the simulation.
     # TODO Fix the fact that this gets run even if t > t_max from the
     # start.
-    state_relpaths[t] = store_state(job_dir, state, t=t, task_id=task_id)
+    state_relpaths[t] = store_state_h5(job_dir, state, t=t, task_id=task_id)
     save_measurement_data(job_dir, state, taskdata, meas)
 
     # Save the final taskdata, overwriting the initial data file(s)
@@ -538,7 +574,7 @@ def branch(state, t, job_dir, taskdata, task_id, dtree):
         if len(child_id) >= 200:
             logging.warn("Child task_id may be too long for use in filenames!")
 
-        child_state_path = store_state(job_dir, child, t=t, task_id=child_id)
+        child_state_path = store_state_h5(job_dir, child, t=t, task_id=child_id)
         child_taskdata = {
             'parent_id': task_id, 
             'parent_treepath': treepath,
