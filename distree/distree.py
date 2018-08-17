@@ -113,10 +113,10 @@ class Distree_PBS(Distree_Base):
         self.working_dir_qsub = working_dir_qsub
         self.stream_dir = stream_dir
 
-        if not working_dir_qsub:
+        if working_dir_qsub:
             pathlib.Path(working_dir_qsub).mkdir(parents=True, exist_ok=True)
 
-        if not stream_dir:
+        if stream_dir:
             pathlib.Path(stream_dir).mkdir(parents=True, exist_ok=True)
 
     def schedule_task(self, task_id, parent_id, taskdata_path, 
