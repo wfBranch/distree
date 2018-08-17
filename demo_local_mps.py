@@ -809,7 +809,8 @@ if __name__ == "__main__":
             canary_path=canary_path,
             python_command='python',
             res_list='walltime=01:00:00',
-            job_env='MKL_NUM_THREADS=24,OMP_NUM_THREADS=1'
+            job_env='MKL_NUM_THREADS=24,OMP_NUM_THREADS=1',
+            working_dir_qsub=os.path.join(job_dir, "PBS_logs/")
         )
 
     # NOTE: This script is designed so that it can schedule the root job and
