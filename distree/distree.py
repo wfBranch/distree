@@ -30,7 +30,7 @@ class Distree_Base():
     """
     def write_log_entry(self, task_id, parent_id, data_fn):
         if not parent_id and os.path.isfile(self.log_path):
-            raise ValueError(
+            raise Exception(
                 "Log file already exists while scheduling root job!"
                 )
 
