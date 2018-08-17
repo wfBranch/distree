@@ -7,7 +7,6 @@ Created on Wed Jul 25 16:10:00 2018
 TODO:
 * Save tensors rather than evoMPS object
 * Store child task info in parent taskdata (redundant, but poss. useful)
-* Make it possible to stop all tasks by e.g. deleting a canary file.
 * Use something like ruamel.yaml to process YAML while preserving comments.
 * Maybe do away with the separate YAML files and put all params in taskdata?
 * Have PBS put the job logs in the job_dir.
