@@ -99,7 +99,7 @@ class Distree_PBS(Distree_Base):
     def __init__(self, log_path, scriptpath, qname,
                 scriptargs=[], python_command=sys.executable, 
                 res_list='', job_env='', working_dir=os.getcwd(),
-                canary_path='', working_dir_qsub=os.getcwd()):
+                canary_path='', working_dir_qsub=None):
         super().__init__(log_path, canary_path=canary_path)
 
         self.qname = qname
@@ -111,7 +111,8 @@ class Distree_PBS(Distree_Base):
         self.working_dir = working_dir
         self.working_dir_qsub = working_dir_qsub
 
-        pathlib.Path(working_dir_qsub).mkdir(parents=True, exist_ok=True)
+        if not working_dir_qsub:
+            pathlib.Path(working_dir_qsub).mkdir(parents=True, exist_ok=True)
 
     def schedule_task(self, task_id, parent_id, taskdata_path):
         super().schedule_task(task_id, parent_id, taskdata_path)
