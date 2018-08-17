@@ -8,7 +8,9 @@ TODO:
 * Save tensors rather than evoMPS object
 * Store child task info in parent taskdata (redundant, but poss. useful)
 * Make it possible to stop all tasks by e.g. deleting a canary file.
-* Make it possible to modify conf params on the command line (e.g. --confmods=...)
+* Use something like ruamel.yaml to process YAML while preserving comments.
+* Maybe do away with the separate YAML files and put all params in taskdata?
+* Have PBS put the job logs in the job_dir.
 """
 
 import scipy as sp
