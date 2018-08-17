@@ -629,6 +629,23 @@ def setup_logging(script_log_dir):
     filehandler.setFormatter(formatter)
 
 
+def check_and_modify_conf(job_dir, conf_relpath, ovr):
+    pars = load_yaml(job_dir, conf_relpath)
+    if ovr:
+        print(ovr)
+        for key, val in ovr.items():
+            # Key must exist in file. Assume type in file is most general
+            # allowed for this parameter.
+            pars[key] = type(pars[key])(val)
+        dump_yaml(pars, job_dir, conf_relpath)
+        
+
+def check_and_modify_confs(job_dir, args):
+    check_and_modify_conf(job_dir, 'confs/initial_pars.yaml', args.initial_pars)
+    check_and_modify_conf(job_dir, 'confs/branch_pars.yaml', args.branch_pars)
+    check_and_modify_conf(job_dir, 'confs/time_evo_pars.yaml', args.time_evo_pars)
+
+
 def parse_args():
     # Parse command line arguments.
     parser = argparse.ArgumentParser()
@@ -645,6 +662,42 @@ def parse_args():
                         action='store_true')
     parser.add_argument('--scheduler', dest='sched', default='PBS',
                         choices=['PBS','local'])
+    parser.add_argument(
+        '-b',
+        '--branch_pars',
+        dest='branch_pars',
+        help=("Allows overwriting parameters in confs/branch_pars.yaml."
+              " Parameters must be supplied in inline YAML format."
+              " Values will be cast to the type of the current value."),
+        metavar='"{param1: val1, param2: val2, ...}"',
+        type=yaml.load,
+        nargs='?',
+        default=None
+    )
+    parser.add_argument(
+        '-i',
+        '--initial_pars',
+        dest='initial_pars',
+        help=("Allows overwriting parameters in confs/initial_pars.yaml."
+              " Parameters must be supplied in inline YAML format."
+              " Values will be cast to the type of the current value."),
+        metavar="{param1: val1, param2: val2, ...}",
+        type=yaml.load,
+        nargs='?',
+        default=None
+    )
+    parser.add_argument(
+        '-t',
+        '--time_evo_pars',
+        dest='time_evo_pars',
+        help=("Allows overwriting parameters in confs/time_evo_pars.yaml."
+              " Parameters must be supplied in inline YAML format."
+              " Values will be cast to the type of the current value."),
+        metavar="{param1: val1, param2: val2, ...}",
+        type=yaml.load,
+        nargs='?',
+        default=None
+    )
     args = parser.parse_args()
     return args
 
@@ -716,6 +769,8 @@ if __name__ == "__main__":
                             )
             taskdata_relpath = ""
         
+        check_and_modify_confs(job_dir, args)
+
         dtree.schedule_task(root_id, None, taskdata_relpath)
     else:
         # Save a simple initial taskdata file and schedule a root job.
@@ -738,6 +793,8 @@ if __name__ == "__main__":
                                                         destconfdir)
                         )
             shutil.copytree(args.confdir, destconfdir)
+
+        check_and_modify_confs(job_dir, args)
 
         taskdata_relpath = get_taskdata_relpath(root_id)
         save_task_data(job_dir, taskdata_relpath, init_task_data, root_id, None)
