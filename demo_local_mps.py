@@ -535,7 +535,7 @@ def branch(state, t, job_dir, taskdata, task_id, dtree):
     # Create taskdata files for, and schedule, children
     for i, (child, child_coeff) in enumerate(zip(children, coeffs)):
         child_id = "{}_{}".format(task_id, i)
-        if len(child_id) >= 250:
+        if len(child_id) >= 200:
             logging.warn("Child task_id may be too long for use in filenames!")
 
         child_state_path = store_state(job_dir, child, t=t, task_id=child_id)
