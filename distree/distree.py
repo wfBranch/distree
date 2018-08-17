@@ -36,7 +36,7 @@ class Distree_Base():
         if not parent_id and os.path.isfile(self.log_path):
             raise Exception(
                 "Log file already exists while scheduling root job!"
-                )
+            )
 
         lock = filelock.FileLock(self.log_path + '.lock')
         with lock:

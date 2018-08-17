@@ -538,7 +538,7 @@ def branch(state, t, job_dir, taskdata, task_id, dtree):
         child_id = "{}_{}".format(task_id, i)
         if len(child_id) >= 250:
             logging.warn("Child task_id may be too long for use in filenames!")
-            
+
         child_state_path = store_state(job_dir, child, t=t, task_id=child_id)
         child_taskdata = {
             'parent_id': task_id, 
@@ -766,12 +766,12 @@ if __name__ == "__main__":
     elif args.sched == 'PBS':
         dtree = dst.Distree_PBS(
             log_path, sys.argv[0], 'qtest', 
-                                scriptargs=scriptargs,
+            scriptargs=scriptargs,
             canary_path=canary_path,
-                                python_command='python',
-                                res_list='walltime=01:00:00',
-                                job_env='MKL_NUM_THREADS=24,OMP_NUM_THREADS=1'
-                                )
+            python_command='python',
+            res_list='walltime=01:00:00',
+            job_env='MKL_NUM_THREADS=24,OMP_NUM_THREADS=1'
+        )
 
     # NOTE: This script is designed so that it can schedule the root job and
     # also child jobs, depending on the supplied command-line arguments.
