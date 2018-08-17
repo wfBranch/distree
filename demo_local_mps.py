@@ -529,7 +529,7 @@ def branch(state, t, job_dir, taskdata, task_id, dtree):
     # Create taskdata files for, and schedule, children
     for i, (child, child_coeff) in enumerate(zip(children, coeffs)):
         # child_id = self.sched.get_id()  # Instead of this, see below.
-        child_id = "{}_c{}".format(task_id, i)
+        child_id = "{}_{}".format(task_id, i)
         child_state_path = store_state(job_dir, child, t=t, task_id=child_id)
         child_taskdata = {
             'parent_id': task_id, 
