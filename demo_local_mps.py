@@ -795,7 +795,8 @@ if __name__ == "__main__":
     scriptargs = ['--child', 
                     '--root_id', root_id,
                     '--jobdir', job_dir,
-                    '--scheduler', args.sched
+                    '--scheduler', args.sched,
+                    '--PBSstreamdir', args.PBSstreamdir
                  ]
     if args.sched == 'local':
         dtree = dst.Distree_Local(
