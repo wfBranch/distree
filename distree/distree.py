@@ -7,6 +7,7 @@ Created on Wed Jul 25 16:10:00 2018
 """
 
 import os
+import time
 import filelock
 import pathlib
 
@@ -160,3 +161,6 @@ class Distree_PBS(Distree_Base):
         logging.info('Running: %s' % cmd)
         p = subprocess.run(cmd, shell=True, cwd=self.working_dir_qsub)
         p.check_returncode()
+        
+        # Speculative attempt to mitigate problems with jobs silently failing
+        time.sleep(2)
