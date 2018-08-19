@@ -17,7 +17,6 @@ import numpy as np
 import numpy.random as rnd
 import sys
 import os
-import time
 import pathlib
 import shutil
 import distree as dst
@@ -720,6 +719,8 @@ def parse_args():
                         action='store_true')
     parser.add_argument('--scheduler', dest='sched', default='PBS',
                         choices=['PBS','local'])
+    parser.add_argument('--PBSstreamdir', type=str, nargs="?", 
+                        dest='PBSstreamdir', default='')
     parser.add_argument(
         '-b',
         '--branch_pars',
@@ -811,7 +812,8 @@ if __name__ == "__main__":
             python_command='python',
             res_list='walltime=01:00:00',
             job_env='MKL_NUM_THREADS=24,OMP_NUM_THREADS=1',
-            stream_dir=os.path.join(job_dir, "PBS_logs/")
+            # TODO: Try putting this *not* on scratch...
+            stream_dir=args.PBSstreamdir #os.path.join(job_dir, "PBS_logs/")
         )
 
     # NOTE: This script is designed so that it can schedule the root job and
@@ -826,7 +828,6 @@ if __name__ == "__main__":
         # This means the task should be run in the current process,
         # rather than be scheduled for later.
         run_task(dtree, job_dir, args.taskfile)
-        time.sleep(5)
     elif args.taskfile:
         # Assume the argument is a taskdata file to be used for a root job
         taskdata_path = os.path.join(job_dir, args.taskfile)
