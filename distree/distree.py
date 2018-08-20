@@ -97,7 +97,7 @@ class Distree_Local(Distree_Base):
 
 
 class Distree_PBS(Distree_Base):
-    def __init__(self, log_path, scriptpath, qname, stream_host,
+    def __init__(self, log_path, scriptpath, qname, schedule_host,
                 scriptargs=[], python_command=sys.executable, 
                 res_list='', job_env='', working_dir=os.getcwd(),
                 canary_path='', working_dir_qsub=None,
@@ -113,7 +113,7 @@ class Distree_PBS(Distree_Base):
         self.working_dir = working_dir
         self.working_dir_qsub = working_dir_qsub
         self.stream_dir = stream_dir
-        self.stream_host = stream_host
+        self.schedule_host = schedule_host
 
         if working_dir_qsub:
             pathlib.Path(working_dir_qsub).mkdir(parents=True, exist_ok=True)
@@ -149,19 +149,13 @@ class Distree_PBS(Distree_Base):
             stream_path = os.path.join(self.stream_dir, str(task_id))
 
         if stream_path:
-            qsub_cmd += ' -o %s:%s.o' % (
-                quote(self.stream_host),
-                quote(stream_path),
-            )
-            qsub_cmd += ' -e %s:%s.e' % (
-                quote(self.stream_host),
-                quote(stream_path),
-            )
-        else:
-            qsub_cmd += ' -o %s:' % quote(self.stream_host)
-            qsub_cmd += ' -e %s:' % quote(self.stream_host)
+            qsub_cmd += ' -o %s.o' % quote(stream_path)
+            qsub_cmd += ' -e %s.e' % quote(stream_path)
 
         cmd = 'echo %s | %s' % (quote(scmd), qsub_cmd)
-        logging.info('Running: %s' % cmd)
-        p = subprocess.run(cmd, shell=True, cwd=self.working_dir_qsub)
+
+        sshcmd = 'ssh %s %s' % (quote(self.schedule_host), quote(cmd))
+
+        logging.info('Running: %s' % sshcmd)
+        p = subprocess.run(sshcmd, shell=True, cwd=self.working_dir_qsub)
         p.check_returncode()
