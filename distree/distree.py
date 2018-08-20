@@ -97,11 +97,11 @@ class Distree_Local(Distree_Base):
 
 
 class Distree_PBS(Distree_Base):
-    def __init__(self, log_path, scriptpath, qname,
+    def __init__(self, log_path, scriptpath, qname, stream_host,
                 scriptargs=[], python_command=sys.executable, 
                 res_list='', job_env='', working_dir=os.getcwd(),
                 canary_path='', working_dir_qsub=None,
-                stream_dir=None):
+                stream_dir=''):
         super().__init__(log_path, canary_path=canary_path)
 
         self.qname = qname
@@ -113,6 +113,7 @@ class Distree_PBS(Distree_Base):
         self.working_dir = working_dir
         self.working_dir_qsub = working_dir_qsub
         self.stream_dir = stream_dir
+        self.stream_host = stream_host
 
         if working_dir_qsub:
             pathlib.Path(working_dir_qsub).mkdir(parents=True, exist_ok=True)
@@ -121,7 +122,7 @@ class Distree_PBS(Distree_Base):
             pathlib.Path(stream_dir).mkdir(parents=True, exist_ok=True)
 
     def schedule_task(self, task_id, parent_id, taskdata_path, 
-                        stream_name=None):
+                        stream_path=''):
         super().schedule_task(task_id, parent_id, taskdata_path)
         
         scmd = '%s %s %s %s' % (
@@ -144,23 +145,23 @@ class Distree_PBS(Distree_Base):
         if self.job_env:
             qsub_cmd += ' -v %s' % self.job_env
 
-        if not stream_name:
-            stream_name = task_id
+        if self.stream_dir and not stream_path:
+            stream_path = os.path.join(self.stream_dir, str(task_id))
 
-        if self.stream_dir:
-            qsub_cmd += ' -o %s' % quote(os.path.join(
-                self.stream_dir,
-                '%s.o' % stream_name
-            ))
-            qsub_cmd += ' -e %s' % quote(os.path.join(
-                self.stream_dir,
-                '%s.e' % stream_name
-            ))
+        if stream_path:
+            qsub_cmd += ' -o %s:%s.o' % (
+                quote(self.stream_host),
+                quote(stream_path),
+            )
+            qsub_cmd += ' -e %s:%s.e' % (
+                quote(self.stream_host),
+                quote(stream_path),
+            )
+        else:
+            qsub_cmd += ' -o %s:' % quote(self.stream_host)
+            qsub_cmd += ' -e %s:' % quote(self.stream_host)
 
         cmd = 'echo %s | %s' % (quote(scmd), qsub_cmd)
         logging.info('Running: %s' % cmd)
         p = subprocess.run(cmd, shell=True, cwd=self.working_dir_qsub)
         p.check_returncode()
-        
-        # Speculative attempt to mitigate problems with jobs silently failing
-        time.sleep(2)
