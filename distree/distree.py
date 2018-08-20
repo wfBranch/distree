@@ -7,6 +7,7 @@ Created on Wed Jul 25 16:10:00 2018
 """
 
 import os
+import socket
 import time
 import filelock
 import pathlib
@@ -154,8 +155,14 @@ class Distree_PBS(Distree_Base):
 
         cmd = 'echo %s | %s' % (quote(scmd), qsub_cmd)
 
-        sshcmd = ['ssh', self.schedule_host, cmd]
+        if socket.gethostname() == self.schedule_host:
+            # Run qsub directly
+            p = subprocess.run(cmd, shell=True, cwd=self.working_dir_qsub)
+            logging.info('Launched: %s' % cmd)
+        else:
+            # SSH to remote host
+            ssh_cmd = ['ssh', self.schedule_host, cmd]
+            p = subprocess.run(ssh_cmd, cwd=self.working_dir_qsub)
+            logging.info('Launched: %s' % ssh_cmd)
 
-        logging.info('Running: %s' % sshcmd)
-        p = subprocess.run(sshcmd, cwd=self.working_dir_qsub)
         p.check_returncode()
