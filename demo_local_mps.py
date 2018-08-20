@@ -864,8 +864,10 @@ if __name__ == "__main__":
         if args.confdir:
             destconfdir = os.path.join(job_dir, "confs")
             logging.info(
-                "Copying conf directory {} to {}".format(args.confdir,
-                                                        destconfdir)
+                "Copying conf directory {} to {}".format(
+                    args.confdir,
+                    destconfdir
+                )
                         )
             shutil.copytree(args.confdir, destconfdir)
 
