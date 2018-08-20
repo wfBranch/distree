@@ -719,6 +719,10 @@ def parse_args():
                         action='store_true')
     parser.add_argument('--scheduler', dest='sched', default='PBS',
                         choices=['PBS','local'])
+    parser.add_argument('--PBSqueue', type=str, nargs="?", 
+                        dest='PBSqueue', default='qwork')
+    parser.add_argument('--PBSres', type=str, nargs="?", 
+                        dest='PBSres', default='walltime=120:00:00')
     parser.add_argument(
         '-b',
         '--branch_pars',
@@ -793,7 +797,9 @@ if __name__ == "__main__":
     scriptargs = ['--child', 
                     '--root_id', root_id,
                     '--jobdir', job_dir,
-                    '--scheduler', args.sched
+                    '--scheduler', args.sched,
+                    '--PBSqueue', args.PBSqueue,
+                    '--PBSres', args.PBSres
                  ]
 
     if args.sched == 'local':
@@ -805,11 +811,11 @@ if __name__ == "__main__":
         )
     elif args.sched == 'PBS':
         dtree = dst.Distree_PBS(
-            log_path, sys.argv[0], 'qtest', 'ip01',
+            log_path, sys.argv[0], args.PBSqueue, 'ip01',
             scriptargs=scriptargs,
             canary_path=canary_path,
             python_command='python',
-            res_list='walltime=01:00:00',
+            res_list=args.PBSres,
             job_env='MKL_NUM_THREADS=24,OMP_NUM_THREADS=1',
             stream_dir=os.path.join(job_dir, "PBS_logs/")
         )
