@@ -126,24 +126,24 @@ class Distree_PBS(Distree_Base):
         super().schedule_task(task_id, parent_id, taskdata_path)
         
         scmd = '%s %s %s %s' % (
-            self.python_command,
-            self.scriptpath, 
-            taskdata_path,
-            " ".join(self.scriptargs)
+            quote(self.python_command),
+            quote(self.scriptpath),
+            quote(taskdata_path),
+            " ".join(map(quote, self.scriptargs))
         )
 
         jobname = task_id
         qsub_cmd = 'qsub -d %s -N %s -q %s' % (
             quote(self.working_dir), 
             quote(jobname), 
-            self.qname
+            quote(self.qname)
         )
 
         if self.res_list:
-            qsub_cmd += ' -l %s' % self.res_list
+            qsub_cmd += ' -l %s' % quote(self.res_list)
 
         if self.job_env:
-            qsub_cmd += ' -v %s' % self.job_env
+            qsub_cmd += ' -v %s' % quote(self.job_env)
 
         if self.stream_dir and not stream_path:
             stream_path = os.path.join(self.stream_dir, str(task_id))
@@ -154,8 +154,8 @@ class Distree_PBS(Distree_Base):
 
         cmd = 'echo %s | %s' % (quote(scmd), qsub_cmd)
 
-        sshcmd = 'ssh %s %s' % (quote(self.schedule_host), quote(cmd))
+        sshcmd = ['ssh', self.schedule_host, cmd]
 
         logging.info('Running: %s' % sshcmd)
-        p = subprocess.run(sshcmd, shell=True, cwd=self.working_dir_qsub)
+        p = subprocess.run(sshcmd, cwd=self.working_dir_qsub)
         p.check_returncode()
