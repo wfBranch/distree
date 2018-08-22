@@ -166,3 +166,57 @@ class Distree_PBS(Distree_Base):
             logging.info('Launched: %s' % ssh_cmd)
 
         p.check_returncode()
+
+
+class Distree_Slurm(Distree_Base):
+    def __init__(self, log_path, scriptpath, account,
+                scriptargs=[], python_command=sys.executable,
+                cpus_per_task=1, mem_per_cpu='', time='',
+                working_dir=os.getcwd(), canary_path='',
+                stream_dir=''):
+        super().__init__(log_path, canary_path=canary_path)
+
+        self.account = account
+        self.scriptpath = scriptpath
+        self.scriptargs = scriptargs
+        self.python_command = python_command
+        self.time = time
+        self.cpus_per_task = cpus_per_task
+        self.mem_per_cpu = mem_per_cpu
+        self.working_dir = working_dir
+        self.stream_dir = stream_dir
+
+        if stream_dir:
+            pathlib.Path(stream_dir).mkdir(parents=True, exist_ok=True)
+
+    def schedule_task(self, task_id, parent_id, taskdata_path, stream_path=''):
+        super().schedule_task(task_id, parent_id, taskdata_path)
+
+        scmd = '%s %s %s %s' % (
+            quote(self.python_command),
+            quote(self.scriptpath),
+            quote(taskdata_path),
+            " ".join(map(quote, self.scriptargs))
+        )
+
+        jobname = task_id
+        sbatch_cmd = 'sbatch -A %s -J %s -c %u --mem-per-cpu=%s -t %s' % (
+            quote(self.account),
+            quote(jobname),
+            self.cpus_per_task,
+            quote(self.mem_per_cpu),
+            quote(self.time)
+        )
+
+        if self.stream_dir and not stream_path:
+            stream_path = os.path.join(self.stream_dir, str(task_id))
+
+        if stream_path:
+            sbatch_cmd += ' -o %s_%%j.out' % quote(stream_path)
+
+        cmd = 'echo %s | %s' % (quote(scmd), sbatch_cmd)
+
+        p = subprocess.run(cmd, shell=True)
+        logging.info('Launched: %s' % cmd)
+
+        p.check_returncode()
