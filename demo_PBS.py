@@ -217,7 +217,13 @@ if __name__ == "__main__":
     logfile = os.path.join(datapath, 'logfile.txt')
 
     # Create a scheduler and tell it what script to run to schedule tasks.
-    dtree = dst.Distree_PBS(logfile,'qtest', scriptpath, scriptargs='--child', python_command='python', res_list='walltime=01:00:00')
+    dtree = dst.Distree_PBS(logfile,
+        scriptpath,
+        'qtest',
+        scriptargs='--child',
+        python_command='python',
+        res_list='walltime=01:00:00'
+    )
 
     root_id = "testjob"
 
