@@ -8,6 +8,7 @@ Created on Wed Jul 25 16:10:00 2018
 
 import pathlib
 import sys
+import os
 import argparse
 import logging
 
@@ -224,7 +225,7 @@ if __name__ == "__main__":
         # Assume the first argument is a taskdata file for a child job.
         # This means the task should be run in the current process,
         # rather than be scheduled for later.
-        run_task(dtree, args.taskfile, data_path)
+        run_task(dtree, args.taskfile, datapath)
     elif args.taskfile:
         # Assume the argument is a taskdata file to be used for a root job
         dtree.schedule_task(root_id, None, args.taskfile)
@@ -239,6 +240,6 @@ if __name__ == "__main__":
                         'coeff': 1.0,
                         'num_children': None}
 
-        taskdata_path = save_task_data(root_id, None, init_task_data, data_path)
+        taskdata_path = save_task_data(root_id, None, init_task_data, datapath)
         # The following schedules a job (it will be run in a different process)
         dtree.schedule_task(root_id, None, taskdata_path)
