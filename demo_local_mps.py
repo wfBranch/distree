@@ -718,8 +718,16 @@ def parse_args():
                         dest='root_id', default='')
     parser.add_argument('--show', dest='show', default=False,
                         action='store_true')
-    parser.add_argument('--scheduler', dest='sched', default='PBS',
-                        choices=['PBS','local'])
+    parser.add_argument('--scheduler', dest='sched', default='slurm',
+                        choices=['slurm', 'PBS','local'])
+    parser.add_argument('--slurm_acc', type=str, nargs="?", 
+                        dest='slurm_acc', default='rrg-gvidal')
+    parser.add_argument('--slurm_time', type=str, nargs="?", 
+                        dest='slurm_time', default='7-00:00:00')
+    parser.add_argument('--slurm_cpus', type=int, nargs="?", 
+                        dest='slurm_cpus', default=1)
+    parser.add_argument('--slurm_mem_cpu', type=str, nargs="?", 
+                        dest='slurm_mem_per_cpu', default='')
     parser.add_argument('--PBSqueue', type=str, nargs="?", 
                         dest='PBSqueue', default='qwork')
     parser.add_argument('--PBSres', type=str, nargs="?", 
@@ -822,6 +830,17 @@ if __name__ == "__main__":
             res_list=args.PBSres,
             job_env='MKL_NUM_THREADS=24,OMP_NUM_THREADS=1',
             stream_dir=os.path.join(job_dir, "PBS_logs/")
+        )
+    elif args.sched == 'slurm':
+        dtree = dst.Distree_Slurm(
+            log_path, sys.argv[0], args.slurm_acc,
+            scriptargs=scriptargs,
+            canary_path=canary_path,
+            python_command=sys.executable,
+            time=args.slurm_time,
+            cpus_per_task=args.slurm_cpus,
+            mem_per_cpu=args.slurm_mem_per_cpu,
+            stream_dir=os.path.join(job_dir, "slurm_logs/")
         )
 
     # NOTE: This script is designed so that it can schedule the root job and
