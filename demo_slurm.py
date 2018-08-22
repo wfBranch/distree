@@ -206,9 +206,9 @@ if __name__ == "__main__":
         logfile,
         scriptpath,
         'rrg-gvidal',
-        scriptargs='--child',
+        scriptargs=['--child'],
         python_command='python',
-        time='walltime=1:00:00',
+        time='01:00:00',
         cpus_per_task=1,
         mem_per_cpu='256M'
     )

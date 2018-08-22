@@ -205,7 +205,8 @@ if __name__ == "__main__":
     dtree = dst.Distree_PBS(logfile,
         scriptpath,
         'qtest',
-        scriptargs='--child',
+        'ip01',
+        scriptargs=['--child'],
         python_command='python',
         res_list='walltime=01:00:00'
     )
