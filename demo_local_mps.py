@@ -838,7 +838,7 @@ if __name__ == "__main__":
         scriptargs += [
             '--slurm_acc', args.slurm_acc,
             '--slurm_time', args.slurm_time,
-            '--slurm_cpus', args.slurm_cpus,
+            '--slurm_cpus', str(args.slurm_cpus),
             '--slurm_mem_cpu', args.slurm_mem_cpu
         ]
         dtree = dst.Distree_Slurm(
