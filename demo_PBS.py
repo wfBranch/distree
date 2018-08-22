@@ -6,22 +6,6 @@ Created on Wed Jul 25 16:10:00 2018
 
 """
 
-import os
-import scipy as sp
-import numpy as np
-import numpy.random as rnd
-import sys
-import distree as dst
-import distree.schedulers as SL
-import anytree as atr
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Jul 25 16:10:00 2018
-
-@author: Ash
-
-"""
-
 import pathlib
 import sys
 import argparse
