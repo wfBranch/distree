@@ -202,13 +202,17 @@ class Distree_Slurm(Distree_Base):
         script = "#!/bin/sh\n" + scmd
 
         jobname = task_id
-        sbatch_cmd = 'sbatch -A %s -J %s -c %u --mem-per-cpu=%s -t %s' % (
+        sbatch_cmd = 'sbatch -A %s -J %s -c %u' % (
             quote(self.account),
             quote(jobname),
-            self.cpus_per_task,
-            quote(self.mem_per_cpu),
-            quote(self.time)
+            self.cpus_per_task
         )
+
+        if self.time:
+            sbatch_cmd += ' -t %s' % quote(self.time)
+
+        if self.mem_per_cpu:
+            sbatch_cmd += ' --mem-per-cpu=%s' % quote(self.mem_per_cpu)
 
         if self.stream_dir and not stream_path:
             stream_path = os.path.join(self.stream_dir, str(task_id))
