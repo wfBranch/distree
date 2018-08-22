@@ -199,6 +199,8 @@ class Distree_Slurm(Distree_Base):
             " ".join(map(quote, self.scriptargs))
         )
 
+        script = "#!/bin/sh\n" + scmd
+
         jobname = task_id
         sbatch_cmd = 'sbatch -A %s -J %s -c %u --mem-per-cpu=%s -t %s' % (
             quote(self.account),
@@ -214,7 +216,7 @@ class Distree_Slurm(Distree_Base):
         if stream_path:
             sbatch_cmd += ' -o %s_%%j.out' % quote(stream_path)
 
-        cmd = 'echo %s | %s' % (quote(scmd), sbatch_cmd)
+        cmd = 'echo %s | %s' % (quote(script), sbatch_cmd)
 
         p = subprocess.run(cmd, shell=True)
         logging.info('Launched: %s' % cmd)
