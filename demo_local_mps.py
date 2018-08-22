@@ -727,7 +727,7 @@ def parse_args():
     parser.add_argument('--slurm_cpus', type=int, nargs="?", 
                         dest='slurm_cpus', default=1)
     parser.add_argument('--slurm_mem_cpu', type=str, nargs="?", 
-                        dest='slurm_mem_per_cpu', default='')
+                        dest='slurm_mem_cpu', default='')
     parser.add_argument('--PBSqueue', type=str, nargs="?", 
                         dest='PBSqueue', default='qwork')
     parser.add_argument('--PBSres', type=str, nargs="?", 
@@ -805,13 +805,11 @@ if __name__ == "__main__":
 
     # Create the tree object, telling it where the logfile lives and how
     # to run tasks (by running this script with --child).
-    scriptargs = ['--child', 
+    scriptargs = [
+        '--child', 
                     '--root_id', root_id,
                     '--jobdir', job_dir,
-                    '--scheduler', args.sched,
-                    '--PBSqueue', args.PBSqueue,
-                    '--PBSres', args.PBSres,
-                    '--PBShost', args.PBShost
+        '--scheduler', args.sched
                  ]
 
     if args.sched == 'local':
@@ -822,6 +820,11 @@ if __name__ == "__main__":
             canary_path=canary_path
         )
     elif args.sched == 'PBS':
+        scriptargs += [
+            '--PBSqueue', args.PBSqueue,
+            '--PBSres', args.PBSres,
+            '--PBShost', args.PBShost
+        ]
         dtree = dst.Distree_PBS(
             log_path, sys.argv[0], args.PBSqueue, args.PBShost,
             scriptargs=scriptargs,
@@ -832,6 +835,12 @@ if __name__ == "__main__":
             stream_dir=os.path.join(job_dir, "PBS_logs/")
         )
     elif args.sched == 'slurm':
+        scriptargs += [
+            '--slurm_acc', args.slurm_acc,
+            '--slurm_time', args.slurm_time,
+            '--slurm_cpus', args.slurm_cpus,
+            '--slurm_mem_cpu', args.slurm_mem_cpu
+        ]
         dtree = dst.Distree_Slurm(
             log_path, sys.argv[0], args.slurm_acc,
             scriptargs=scriptargs,
@@ -839,7 +848,7 @@ if __name__ == "__main__":
             python_command=sys.executable,
             time=args.slurm_time,
             cpus_per_task=args.slurm_cpus,
-            mem_per_cpu=args.slurm_mem_per_cpu,
+            mem_per_cpu=args.slurm_mem_cpu,
             stream_dir=os.path.join(job_dir, "slurm_logs/")
         )
 
