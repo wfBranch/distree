@@ -5,5 +5,4 @@ The tree structure is determined dynamically, with tasks spawning child tasks as
 
 See demo files for examples.
 
-## TODO
-* Make a PBS scheduler
+See the MPS branch for a more recent version!
