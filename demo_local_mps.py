@@ -382,10 +382,17 @@ def get_state_relpath_h5(task_id, t):
 
 # Saves the current quantum state to an HDF5 file. 
 # (Single-time snapshot, not a trajectory)
-def store_state_h5(job_dir, state, **kwargs):
+def store_state_h5(job_dir, state, branch_coeff, **kwargs):
     relpath = get_state_relpath_h5(**kwargs)
     path = os.path.join(job_dir, relpath)
     with h5py.File(path, "w") as f:
+        dset = f.create_dataset(
+            'branch_coeff',
+            shape=(),
+            dtype=float,
+            data=branch_coeff
+        )
+
         dset = f.create_dataset('q', (state.N,), dtype=int)
         dset[:] = state.q[1:]
 
@@ -470,7 +477,7 @@ def run_task(dtree, job_dir, taskdata_relpath):
           "The task {} has no states in it, so we initialize.".format(task_id)
           )
         s = initial_state(initial_pars, get_hamiltonian(initial_pars))
-        s_path = store_state_h5(job_dir, s, t=0.0, task_id=task_id)
+        s_path = store_state_h5(job_dir, s, taskdata["coeff"], t=0.0, task_id=task_id)
         state_relpaths[0.0] = s_path
         taskdata["state_paths"] = state_relpaths
 
@@ -526,7 +533,7 @@ def run_task(dtree, job_dir, taskdata_relpath):
 
         if t - prev_checkpoint >= taskdata["checkpoint_frequency"]:
             logging.info("Task {} checkpointing.".format(task_id))
-            state_relpaths[t] = store_state_h5(job_dir, state, t=t, task_id=task_id)
+            state_relpaths[t] = store_state_h5(job_dir, state, taskdata["coeff"], t=t, task_id=task_id)
             save_measurement_data(job_dir, state, taskdata, meas)
             prev_checkpoint = t
 
@@ -546,7 +553,7 @@ def run_task(dtree, job_dir, taskdata_relpath):
     # Always store the state at the end of the simulation.
     # TODO Fix the fact that this gets run even if t > t_max from the
     # start.
-    state_relpaths[t] = store_state_h5(job_dir, state, t=t, task_id=task_id)
+    state_relpaths[t] = store_state_h5(job_dir, state, taskdata["coeff"], t=t, task_id=task_id)
     save_measurement_data(job_dir, state, taskdata, meas)
 
     # Save the final taskdata, overwriting the initial data file(s)
@@ -573,12 +580,13 @@ def branch(state, t, job_dir, taskdata, task_id, dtree):
     treepath = branch_treepath(parent_treepath, branch_num)
 
     # Create taskdata files for, and schedule, children
-    for i, (child, child_coeff) in enumerate(zip(children, coeffs)):
+    for i, (child, child_coeff_local) in enumerate(zip(children, coeffs)):
         child_id = "{}_{}".format(task_id, i)
+        child_coeff = child_coeff_local*taskdata["coeff"]
         if len(child_id) >= 200:
             logging.warn("Child task_id may be too long for use in filenames!")
 
-        child_state_path = store_state_h5(job_dir, child, t=t, task_id=child_id)
+        child_state_path = store_state_h5(job_dir, child, child_coeff, t=t, task_id=child_id)
         child_taskdata = {
             'parent_id': task_id, 
             'parent_treepath': treepath,
@@ -587,7 +595,7 @@ def branch(state, t, job_dir, taskdata, task_id, dtree):
             'state_paths': {t: child_state_path},
             # We explicitly cast to float, to avoid numpy.float64 and its
             # ugly yaml dump.
-            'coeff': float(child_coeff*taskdata["coeff"]),
+            'coeff': float(child_coeff),
             'measurement_frequency': taskdata["measurement_frequency"],
             'checkpoint_frequency': taskdata["checkpoint_frequency"],
             'initial_pars_path': taskdata["initial_pars_path"],
