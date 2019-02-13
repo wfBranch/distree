@@ -5,7 +5,6 @@ Created on Wed Jul 25 16:10:00 2018
 @author: Ash & Markus
 
 TODO:
-* Save tensors rather than evoMPS object
 * Store child task info in parent taskdata (redundant, but poss. useful)
 * Use something like ruamel.yaml to process YAML while preserving comments.
 * Maybe do away with the separate YAML files and put all params in taskdata?
