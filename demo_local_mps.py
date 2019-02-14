@@ -542,8 +542,9 @@ def run_task(dtree, job_dir, taskdata_relpath):
                 ):
             logging.info("Task {} branching.".format(task_id))
             num_branches = branch(state, t, job_dir, taskdata, task_id, dtree)
-            if num_branches > 1:
-                logging.info("Task {}, branched into {} children."
+            one_child_branches = taskdata["one_child_branches"]
+            if num_branches > 1 or one_child_branches:
+                logging.info("Task {}, branched into {} child(ren)."
                                 .format(task_id, num_branches))
                 break
             else:
@@ -569,9 +570,10 @@ def branch(state, t, job_dir, taskdata, task_id, dtree):
     branch_pars = load_yaml(job_dir, taskdata["branch_pars_path"])
     children, coeffs = find_branches(state, branch_pars)
     num_children = len(children)
+    one_child_branches = taskdata["one_child_branches"]
 
-    if num_children < 2:
-        # No branching happened.
+    if num_children < 2 and not one_child_branches:
+        # No branching happened and we continue the simulation.
         return num_children
 
     taskdata['num_children'] = num_children
@@ -598,6 +600,7 @@ def branch(state, t, job_dir, taskdata, task_id, dtree):
             'coeff': float(child_coeff),
             'measurement_frequency': taskdata["measurement_frequency"],
             'checkpoint_frequency': taskdata["checkpoint_frequency"],
+            'one_child_branches': taskdata["one_child_branches"],
             'initial_pars_path': taskdata["initial_pars_path"],
             'time_evo_pars_path': taskdata["time_evo_pars_path"],
             'branch_pars_path': taskdata["branch_pars_path"]
@@ -896,6 +899,9 @@ if __name__ == "__main__":
             'coeff': 1.0,
             'measurement_frequency': 0.05,
             'checkpoint_frequency': 100.,#0.1,   # If this is larger than t_max, the only time data is taken is the beginning and end of a task (i.e., immediately before and after branching events)
+            # Whether to, in the case of producing only one child, still treat
+            # it like a branching event.
+            'one_child_branches': True,
             'initial_pars_path': 'confs/initial_pars.yaml',
             'time_evo_pars_path': 'confs/time_evo_pars.yaml',
             'branch_pars_path': 'confs/branch_pars.yaml'
