@@ -163,12 +163,14 @@ class Distree_PBS(Distree_Base):
 
         if socket.gethostname() == self.schedule_host:
             # Run qsub directly
-            p = subprocess.run(cmd, shell=True, cwd=self.working_dir_qsub)
+            p = subprocess.run(cmd, shell=True, cwd=self.working_dir_qsub,
+                               capture_output=True)
             logging.info('Launched: %s' % cmd)
         else:
             # SSH to remote host
             ssh_cmd = ['ssh', self.schedule_host, cmd]
-            p = subprocess.run(ssh_cmd, cwd=self.working_dir_qsub)
+            p = subprocess.run(ssh_cmd, cwd=self.working_dir_qsub,
+                               capture_output=True)
             logging.info('Launched: %s' % ssh_cmd)
         logging.info('Launch stdout:\n{}'.format(p.stdout))
         logging.info('Launch stderr:\n{}'.format(p.stderr))
