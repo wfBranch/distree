@@ -144,7 +144,7 @@ class Distree_PBS(Distree_Base):
             quote(jobname), 
         )
         if self.qname:
-            qsub_cmd += ' -q $s' quote(self.qname)
+            qsub_cmd += ' -q $s' % quote(self.qname)
 
         if self.res_list:
             qsub_cmd += ' -l %s' % quote(self.res_list)
