@@ -170,6 +170,8 @@ class Distree_PBS(Distree_Base):
             ssh_cmd = ['ssh', self.schedule_host, cmd]
             p = subprocess.run(ssh_cmd, cwd=self.working_dir_qsub)
             logging.info('Launched: %s' % ssh_cmd)
+        logging.info('Launch stdout:\n{}'.format(p.stdout))
+        logging.info('Launch stderr:\n{}'.format(p.stderr))
 
         p.check_returncode()
 
