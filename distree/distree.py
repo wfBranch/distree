@@ -139,11 +139,12 @@ class Distree_PBS(Distree_Base):
         )
 
         jobname = task_id
-        qsub_cmd = 'qsub -d %s -N %s -q %s' % (
+        qsub_cmd = 'qsub -d %s -N %s' % (
             quote(self.working_dir), 
             quote(jobname), 
-            quote(self.qname)
         )
+         if self.qname:
+             qsub_cmd += ' -q $s' quote(self.qname)
 
         if self.res_list:
             qsub_cmd += ' -l %s' % quote(self.res_list)
