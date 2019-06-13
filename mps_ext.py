@@ -10,7 +10,6 @@ import scipy.linalg as la
 import evoMPS.mps_gen as mp
 import evoMPS.tdvp_gen as tdvp
 import functools as ft
-import matplotlib.pyplot as plt
 import copy
 import time
 
@@ -427,14 +426,6 @@ def make_ham(hamTerm,N):
         H=H+kronList(factors)
     return H
     
-def plot_energy(s,title, show=False, subtract = 0, new_figure=True):
-    if new_figure:
-        plt.figure()
-    plt.plot(range(1,s.N+1),s.h_expect[1:].real-subtract)
-    plt.title(title)
-    if show:
-       plt.show()
-
 def random_hermitian(N):
     X = np.random.randn(N,N) + 1j*np.random.rand(N,N)
     X = (X + X.conj().transpose())/np.sqrt(2)

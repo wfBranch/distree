@@ -10,7 +10,6 @@ import sys
 sys.path.insert(0,'/Users/curtvk/Dropbox/DynalistNotes/Branches')
 
 import numpy as np
-import pylab as pl
 from scipy.linalg import expm
 import time
 from SpinLanguageSparse import*
