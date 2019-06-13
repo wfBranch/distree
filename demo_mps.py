@@ -847,7 +847,7 @@ if __name__ == "__main__":
             python_command=sys.executable,
             precmd=args.PBSprecmd,
             res_list=args.PBSres,
-            job_env='MKL_NUM_THREADS=24,OMP_NUM_THREADS=1',
+            job_env='',
             stream_dir=os.path.join(job_dir, "PBS_logs/")
         )
     elif args.sched == 'slurm':
