@@ -99,16 +99,16 @@ class Distree_Local(Distree_Base):
 
 class Distree_PBS(Distree_Base):
     def __init__(self, log_path, scriptpath, qname, schedule_host,
-                scriptargs=[], python_command=sys.executable, 
-                res_list='', job_env='', working_dir=os.getcwd(),
-                canary_path='', working_dir_qsub=None,
-                stream_dir=''):
+                 scriptargs=[], python_command=sys.executable, precmd='',
+                 res_list='', job_env='', working_dir=os.getcwd(),
+                 canary_path='', working_dir_qsub=None, stream_dir=''):
         super().__init__(log_path, canary_path=canary_path)
 
         self.qname = qname
         self.scriptpath = scriptpath
         self.scriptargs = scriptargs
         self.python_command = python_command
+        self.precmd = precmd
         self.res_list = res_list
         self.job_env = job_env
         self.working_dir = working_dir
@@ -126,7 +126,12 @@ class Distree_PBS(Distree_Base):
                         stream_path=''):
         super().schedule_task(task_id, parent_id, taskdata_path)
         
-        scmd = '%s %s %s %s' % (
+        if self.precmd:
+            scmd = '%s;' % self.precmd
+        else:
+            scmd = ''
+
+        scmd += '%s %s %s %s' % (
             quote(self.python_command),
             quote(self.scriptpath),
             quote(taskdata_path),

@@ -744,6 +744,10 @@ def parse_args():
                         dest='PBSres', default='walltime=120:00:00')
     parser.add_argument('--PBShost', type=str, nargs="?", 
                         dest='PBShost', default=socket.gethostname())
+    parser.add_argument('--PBSprecmd', type=str, nargs="?", 
+                        dest='PBSprecmd', default='',
+                        help=("Shell command to run at the start of each job,"
+                              " such as loading moudles."))
     parser.add_argument(
         '-b',
         '--branch_pars',
@@ -833,6 +837,7 @@ if __name__ == "__main__":
         scriptargs += [
             '--PBSqueue', args.PBSqueue,
             '--PBSres', args.PBSres,
+            '--PBSprecmd', args.PBSprecmd,
             '--PBShost', args.PBShost
         ]
         dtree = dst.Distree_PBS(
@@ -840,6 +845,7 @@ if __name__ == "__main__":
             scriptargs=scriptargs,
             canary_path=canary_path,
             python_command=sys.executable,
+            precmd=args.PBSprecmd,
             res_list=args.PBSres,
             job_env='MKL_NUM_THREADS=24,OMP_NUM_THREADS=1',
             stream_dir=os.path.join(job_dir, "PBS_logs/")
