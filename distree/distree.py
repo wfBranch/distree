@@ -101,7 +101,8 @@ class Distree_PBS(Distree_Base):
     def __init__(self, log_path, scriptpath, qname, schedule_host,
                  scriptargs=[], python_command=sys.executable, precmd='',
                  res_list='', job_env='', working_dir=os.getcwd(),
-                 canary_path='', working_dir_qsub=None, stream_dir=''):
+                 canary_path='', working_dir_qsub=None, stream_dir='',
+                 need_ssh=False):
         super().__init__(log_path, canary_path=canary_path)
 
         self.qname = qname
@@ -115,6 +116,7 @@ class Distree_PBS(Distree_Base):
         self.working_dir_qsub = working_dir_qsub
         self.stream_dir = stream_dir
         self.schedule_host = schedule_host
+        self.need_ssh = need_ssh
 
         if working_dir_qsub:
             pathlib.Path(working_dir_qsub).mkdir(parents=True, exist_ok=True)
@@ -161,7 +163,7 @@ class Distree_PBS(Distree_Base):
 
         cmd = 'echo %s | %s' % (quote(scmd), qsub_cmd)
 
-        if socket.gethostname() == self.schedule_host:
+        if socket.gethostname() == self.schedule_host or not self.need_ssh:
             # Run qsub directly
             p = subprocess.run(cmd, shell=True, cwd=self.working_dir_qsub,
                                capture_output=True)
