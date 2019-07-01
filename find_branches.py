@@ -148,7 +148,7 @@ def optimize_branch_projectors(s, i1, i2, P1, P2):
     s2 = S <= 0
     R1 = sp.dot(V[:,s1], V[:,s1].conjugate().transpose())
     R2 = sp.dot(V[:,s2], V[:,s2].conjugate().transpose())
-    
+
     R1_env = R1
     R2_env = R2
     for i in reversed(range(i1, i2+1)):
@@ -391,7 +391,7 @@ def find_two_branches_sparse(s, pars):
                 M_nonint = spsla.svds(
                     TM, k=1, return_singular_vectors=False
                 )[0]
-    
+
     fid = sum(abs(sp.array(coeff_list))**2)
     msg = "Found a branch decomposition with local (i1, i2) bond dimensions ({}, {}) and ({}, {}) and coefficients {} and {}.".format(dim_list_L[0], dim_list_R[0], dim_list_L[1], dim_list_R[1], *coeff_list)
     logging.info(msg)

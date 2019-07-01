@@ -30,7 +30,7 @@ import evoMPS.tdvp_gen as tdvp
 import pickle
 import h5py
 from evolve import evolve_mps
-from find_branches import find_branches
+from find_branches import find_branches_sparse
 
 
 # J: All comments with a "J:" out front denote comments written by Jess as he
@@ -385,11 +385,12 @@ def get_state_relpath_h5(task_id, t):
 def store_state_h5(job_dir, state, branch_coeff, **kwargs):
     relpath = get_state_relpath_h5(**kwargs)
     path = os.path.join(job_dir, relpath)
+    coeff_type = complex if type(branch_coeff) == np.complex_ else float
     with h5py.File(path, "w") as f:
         dset = f.create_dataset(
             'branch_coeff',
             shape=(),
-            dtype=float,
+            dtype=coeff_type,
             data=branch_coeff
         )
 
@@ -568,7 +569,7 @@ def run_task(dtree, job_dir, taskdata_relpath):
 def branch(state, t, job_dir, taskdata, task_id, dtree):
     # Try to branch.
     branch_pars = load_yaml(job_dir, taskdata["branch_pars_path"])
-    children, coeffs = find_branches(state, branch_pars)
+    children, coeffs = find_branches_sparse(state, branch_pars)
     num_children = len(children)
     one_child_branches = taskdata["one_child_branches"]
 
@@ -907,7 +908,7 @@ if __name__ == "__main__":
             'checkpoint_frequency': 100.,#0.1,   # If this is larger than t_max, the only time data is taken is the beginning and end of a task (i.e., immediately before and after branching events)
             # Whether to, in the case of producing only one child, still treat
             # it like a branching event.
-            'one_child_branches': True,
+            'one_child_branches': False,
             'initial_pars_path': 'confs/initial_pars.yaml',
             'time_evo_pars_path': 'confs/time_evo_pars.yaml',
             'branch_pars_path': 'confs/branch_pars.yaml'
