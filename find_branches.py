@@ -93,29 +93,39 @@ def find_branches_sparse(s, pars):
 
 def find_blocks_in_basis(A):
     dim = A.shape[0]
-    corner_sizes = [sp.sum(A[:i,i:]) for i in range(1, dim)]
-    i_min = sp.argmin(corner_sizes)
+    # Normalize the rows and columns of A so that the diagonal is ones.
+    A = deepcopy(A)
+    for i in range(0, dim):
+        d = A[i,i]
+        A[i,:] /= sp.sqrt(d)
+        A[:,i] /= sp.sqrt(d)
+    corner_avgs = [sp.sum(A[:i,i:])/(i*(dim-i)) for i in range(1, dim)]
+    i_min = sp.argmin(corner_avgs)
+    cost = corner_avgs[i_min]
     s1 = list(range(i_min+1))
     s2 = [i for i in range(dim) if i not in s1]
     while True:
-        candidate_changes = []
+        candidate_costs = []
         for i in range(dim):
             if i in s1:
                 if len(s1) == 1:
-                    cost_change = sp.inf
+                    new_cost = sp.inf
                 else:
-                    cost_change = (sp.sum(A[s1,i]) - sp.sum(A[i,s2]) -
-                                   A[i,i])
+                    new_elements = (sp.sum(A[s1,i]) - sp.sum(A[i,s2]) - A[i,i])
+                    l1, l2 = len(s1), len(s2)
+                    new_cost = (cost*l1*l2 + new_elements)/((l1-1)*(l2+1))
             else:
                 if len(s2) == 1:
-                    cost_change = sp.inf
+                    new_cost = sp.inf
                 else:
-                    cost_change = (-sp.sum(A[s1,i]) + sp.sum(A[i,s2])
-                                   - A[i,i])
-            candidate_changes.append(cost_change)
-        i = sp.argmin(candidate_changes)
-        cost_change = candidate_changes[i]
-        if cost_change < 0:
+                    new_elements = (-sp.sum(A[s1,i]) + sp.sum(A[i,s2]) - A[i,i])
+                    l1, l2 = len(s1), len(s2)
+                    new_cost = (cost*l1*l2 + new_elements)/((l1+1)*(l2-1))
+            candidate_costs.append(new_cost)
+        i = sp.argmin(candidate_costs)
+        new_cost = candidate_costs[i]
+        if new_cost < cost:
+            cost = new_cost
             if i in s1:
                 s1.remove(i)
                 s2.append(i)
@@ -125,6 +135,32 @@ def find_blocks_in_basis(A):
         else:
             break
     return s1, s2
+
+def optimize_branch_projectors(s, i1, i2, P1, P2):
+    P1_env = P1
+    P2_env = P2
+    for i in range(i1, i2+1):
+        P1_env = eps_l_noop(P1_env, s.A[i], s.A[i])
+        P2_env = eps_l_noop(P2_env, s.A[i], s.A[i])
+    env = P1_env - P2_env
+    S, V = sp.linalg.eigh(env)
+    s1 = S > 0
+    s2 = S <= 0
+    R1 = sp.dot(V[:,s1], V[:,s1].conjugate().transpose())
+    R2 = sp.dot(V[:,s2], V[:,s2].conjugate().transpose())
+    
+    R1_env = R1
+    R2_env = R2
+    for i in reversed(range(i1, i2+1)):
+        R1_env = eps_r_noop(R1_env, s.A[i], s.A[i])
+        R2_env = eps_r_noop(R2_env, s.A[i], s.A[i])
+    env = R1_env - R2_env
+    S, V = sp.linalg.eigh(env)
+    s1 = S > 0
+    s2 = S <= 0
+    P1 = sp.dot(V[:,s1], V[:,s1].conjugate().transpose())
+    P2 = sp.dot(V[:,s2], V[:,s2].conjugate().transpose())
+    return P1, P2, R1, R2
 
 def find_two_branches_sparse(s, pars):
     """ Try to find two branches with records on regions L, M, R, where
@@ -144,6 +180,15 @@ def find_two_branches_sparse(s, pars):
       the branch projectors commute with the MPS over M. this is only used if
       system_for_records is 'R' or 'RM', since finding records on 'M' only can
       be done in O(D^3) without sampling.
+    - pars["comm_tau"] is parameter similar to a Trotter step, used in
+      approximating exp(sum_i -K_i) as (prod_i exp(-tau K_i))^1/tau, where K_i
+      are commutator superoperators squared. pars["comm_threshold"] and
+      pars["comm_iters"] are the threshold for convergence and maximum number
+      of iterations allowed when looking for the dominant eigenvector of this
+      operator. "comm" stands for commutator.
+    - pars["projopt_iters"] and pars["projopt_threshold"] are the maximum
+      number of iterations and threshold for convergence when optimizing the
+      projectors, alternating between the ones at i1 and the ones at i2.
     """
     # Set the default i1 and i2 if no sensible values are provided.
     if pars["i1"] and pars["i2"] and 1 <= pars["i1"] <= pars["i2"] <= s.N:
@@ -157,11 +202,11 @@ def find_two_branches_sparse(s, pars):
     dimR = s.D[i2]
 
     if dimL < 2:
-        msg = "Can't branch because at D at i1 is already 1."
+        msg = "Can't branch because D at i1 is already 1."
         logging.info(msg)
         return [s], [1.0]
     if dimR < 2:
-        msg = "Can't branch because at D at i2 is already 1."
+        msg = "Can't branch because D at i2 is already 1."
         logging.info(msg)
         return [s], [1.0]
 
@@ -174,8 +219,8 @@ def find_two_branches_sparse(s, pars):
     for i in range(1, i1):
         shift_canpoint_evomps(s, i, 1)
 
+    matrices_R = []
     if 'R' in pars["system_for_records"]:
-        matrices_R = []
         for j in range(pars["k"]):
             M = sp.eye(dimL, dimL)
             for i in range(i1, i2+1):
@@ -186,111 +231,66 @@ def find_two_branches_sparse(s, pars):
                 A_i = sp.tensordot(s.A[i], state_i, axes=(0, 0))
                 M = sp.dot(M, A_i)
             M = sp.dot(M, M.conjugate().transpose())
+            # TODO Choose how to normalize the M's. Here's one choice, a couple
+            # of lines below is another candidate.
+            M /= sp.linalg.norm(M)
             matrices_R.append(M)
-    k_factor_R = sp.prod(sp.array(s.q[i1:i2+1], dtype=sp.float_))/pars["k"]
-    matrices_R = [M*k_factor_R for M in matrices_R]
+    #k_factor_R = sp.prod(sp.array(s.q[i1:i2+1], dtype=sp.float_))/pars["k"]
+    #matrices_R = [M*k_factor_R for M in matrices_R]
+
+    matrices_M = []
     if 'M' in pars["system_for_records"]:
-        matrices_M = []
         for j in range(pars["k"]):
             # TODO Do we want positive definite matrices like below, or should
             # we only pick product states?
-            r = sp.random.randn(dimR, dimR)
+            M = sp.random.randn(dimR, dimR)
             if s.typ == sp.complex_:
-                r = r + 1j*sp.random.randn(dimR, dimR)
-            r = sp.dot(r, r.conjugate().transpose())
-            r = r/sp.linalg.norm(r)
+                M = M + 1j*sp.random.randn(dimR, dimR)
+            M = sp.dot(M, M.conjugate().transpose())
+            M = M/sp.linalg.norm(M)
             for i in reversed(range(i1, i2+1)):
-                r = eps_r_noop(r, s.A[i], s.A[i])
-            matrices_M.append(r)
-    k_factor_M = dimR/pars["k"]
-    matrices_M = [M*k_factor_M for M in matrices_M]
+                M = eps_r_noop(M, s.A[i], s.A[i])
+            # TODO Choose how to normalize the M's. Here's one choice, a couple
+            # of lines below is another candidate.
+            M /= sp.linalg.norm(M)
+            matrices_M.append(M)
+    #k_factor_M = dimR/pars["k"]
+    #matrices_M = [M*k_factor_M for M in matrices_M]
+
     matrices = matrices_R + matrices_M
     average_norm = sp.average([sp.linalg.norm(M) for M in matrices])
     matrices = [M/average_norm for M in matrices]
-    conjugates = [r.conjugate().transpose() for r in matrices]
-    squaresL = [sp.dot(rdg, r) for r, rdg in zip(matrices, conjugates)]
-    squaresR = [sp.dot(r, rdg) for r, rdg in zip(matrices, conjugates)]
-    def C_func(X):
-        X = sp.reshape(X, (dimL, dimL))
-        res = sp.zeros_like(X)
+
+    decompositions = [sp.linalg.eigh(M) for M in matrices]
+    bases = [d[1] for d in decompositions]
+    bases_dg = [U.conjugate().transpose() for U in bases]
+    diff_matrices = [sp.reshape(d[0], (1,-1)) - sp.reshape(d[0], (-1,1))
+                     for d in decompositions]
+    filter_matrices = [sp.exp(-pars["comm_tau"]*abs(M)**2) for M in diff_matrices]
+    X = sp.zeros_like(matrices[0])
+    for M in matrices:
+        X += sp.random.randn(1)*M
+    X /= sp.linalg.norm(X)
+    change = sp.inf
+    counter = 0
+    eye = sp.eye(X.shape[0])/X.shape[0]
+
+    while counter < pars["comm_iters"] and change > pars["comm_threshold"]:
+        X_old = X
         for i in range(len(matrices)):
-            term1 = sp.dot(squaresL[i], X)
-            term2 = sp.dot(X, squaresR[i])
-            term3 = sp.dot(conjugates[i], sp.dot(X, matrices[i]))
-            term4 = sp.dot(matrices[i], sp.dot(X, conjugates[i]))
-            res += term1 + term2 - term3 - term4
-        res = sp.reshape(res, (dimL, dimL))
-        return res
-    C = spsla.LinearOperator((dimL**2, dimL**2), C_func, dtype=s.typ)
-
-    # DEBUG
-    #eyeL = sp.reshape(sp.eye(dimL, dtype=s.typ), (dimL**2,))
-    #print(sp.linalg.norm(C.matvec(eyeL)))
-    #print(C.matvec(eyeL))
-    # END DEBUG
-
-    # Find the largest magnitude eigenvalue of C. This will be used to scale C
-    # so that all its eigenvalues are negative, making the smallest ones the
-    # largest in magnitude.
-    # TODO There's probably a way to give a reasonable upper bound for the
-    # largest eigenvalue using Frobenius norms, avoiding this eigenvalue
-    # search.
-    S, U = spsla.eigsh(C, k=1)
-    shift = abs(S[0])
-    # TODO Make a function that creates this and C_func?
-    def C_scaled_func(X):
-        X = sp.reshape(X, (dimL, dimL))
-        res = -shift*X
-        # TODO This is far from optimal: We could sum up all squares
-        # before-hand, and also use reshapes for term3 and term4. Also, the
-        # last two are the same since all our matrices are hermitian (and in
-        # fact pos. semidef.).
-        for i in range(len(matrices)):
-            term1 = sp.dot(squaresL[i], X)
-            term2 = sp.dot(X, squaresR[i])
-            term3 = sp.dot(conjugates[i], sp.dot(X, matrices[i]))
-            term4 = sp.dot(matrices[i], sp.dot(X, conjugates[i]))
-            res += term1 + term2 - term3 - term4
-        res = sp.reshape(res, (dimL, dimL))
-        return res
-    C_scaled = spsla.LinearOperator((dimL**2, dimL**2), C_scaled_func,
-                                    dtype=s.typ)
-    # DEBUG
-    #C_scaled = C - spsla.LinearOperator((dimL**2, dimL**2), lambda x: shift*x)
-    # END DEBUG
-
-    # Find the lowest two eigenpairs of C. Two because we are looking for two
-    # branches.
-    S, U = spsla.eigsh(C_scaled, k=2)
-    # DEBUG
-    #S, U = spsla.eigsh(C, k=2, which="SM")
-    # END DEBUG
-    U_tensor = sp.reshape(U, (dimL, dimL, len(S)))
-    S += shift  # Correct for the above shift.
-    # DEBUG
-    print("Spectrum of C: {} (shift: {})".format(S, shift))
-    # END DEBUG
-
-    # Find X, a linear combination of U[:,0] and U[:,1] that has a clear
-    # separation between blocks. This is done by expressing both U0 and U1 in
-    # the basis that diagonalizes U0, and choosing a linear combination that
-    # makes sure there's a zero somewhere on the diagonal. If there are blocks
-    # to be found then U0 and U1 are approximately diagonal in the same basis,
-    # and this choice then guarantees that X has an eigenvalue that is almost
-    # zero, which must be clearly separated from some other eigenvalues, since
-    # X has norm 1. Another entirely valid approach would be to make X be a
-    # random linear combination of U0 and U1. What we are doing here is just
-    # minimizing the probability for accidental near-degeneracies in the
-    # specturm of X.
-    U0 = U_tensor[:,:,0]
-    U1 = U_tensor[:,:,1]
-    # If a matrix is in the kernel of C, then it's conjugate must be as well.
-    U0 = (U0 + U0.conjugate().transpose())/2
-    U1 = (U1 + U1.conjugate().transpose())/2
-    S, V = sp.linalg.eigh(U0)
-    U1_diag = sp.dot(V.conjugate().transpose(), sp.dot(U1, V))
-    theta = sp.arctan(-U1_diag[-1,-1]/S[-1])
-    X = sp.sin(theta)*U0 + sp.cos(theta)*U1
+            U = bases[i]
+            U_dg = bases_dg[i]
+            filter_matrix = filter_matrices[i]
+            # TODO Is there a faster way to do the three next line, with some
+            # precomputation? One could at least multiply consecutive Us
+            # together.
+            X = sp.dot(U_dg, sp.dot(X, U))
+            X = X * filter_matrix
+            X = sp.dot(U, sp.dot(X, U_dg))
+            X = X - eye*sp.trace(X)
+            X /= sp.linalg.norm(X)
+        change = sp.linalg.norm(X - X_old)
+        counter += 1
 
     # Diagonalize X. Its eigenbasis is the basis in which we will project onto
     # the branches. In an ideal world with perfect records, the spectrum of X
@@ -301,60 +301,40 @@ def find_two_branches_sparse(s, pars):
     # measured by the off-diagonal blocks of A. We then search for the division
     # of A into two blocks that minimizes this error measure.
     S, V = sp.linalg.eigh(X)
-    # DEBUG
-    print("Spectrum of X: {}".format(S))  # DEBUG
-    print(sp.linalg.eigh(U0)[0])
-    print(sp.linalg.eigh(U1)[0])
-    print("Whether U0, U1 and X are in the kernel of C:")
-    print(sp.linalg.norm(C.matvec(sp.reshape(U0, (-1,)))))
-    print(sp.linalg.norm(C.matvec(sp.reshape(U1, (-1,)))))
-    print(sp.linalg.norm(C.matvec(sp.reshape(X, (-1,)))))
-    #print(U0)
-    #print(U1)
-    # END DEBUG
     matrices_V = [sp.dot(V.conjugate().transpose(), sp.dot(M, V))
                     for M in matrices]
-    # DEBUG
-    #print("="*50)
-    #[print(sp.linalg.norm(M)) for M in matrices]
-    #print("="*50)
-    #[print(sp.linalg.norm(M)) for M in matrices_V]
-    #input()
-    # END DEBUG
     A = sum(abs(M)**2 for M in matrices_V)
-    print(A)  # DEBUG
     s1, s2 = find_blocks_in_basis(A)
     P1 = sp.dot(V[:,s1], V[:,s1].conjugate().transpose())
     P2 = sp.dot(V[:,s2], V[:,s2].conjugate().transpose())
-    projector_list_L = [P1, P2]
-    # DEBUG
-    print("s1 :", s1)
-    print("s2 :", s2)
-    print(sp.linalg.norm(C_func(P1)))
-    print(sp.linalg.norm(C_func(P2)))
-    # END DEBUG
 
     if "R" in pars["system_for_records"]:
-        # Now that we have the projectors at the boundary of L and M, find the best
-        # ones to match at the boundary of M and R.
-        # TODO Transport P1 and P2 to i2. Take the difference, use that as the
-        # environment to find the best basis. Maybe run the same thing as above to
-        # find the correct partition? Note that it's going to have negative
-        # eigenvalues on one branch and positive on the other, so this should be
-        # easy.
-        P1_env = P1
-        P2_env = P2
-        for i in range(i1, i2+1):
-            P1_env = eps_l_noop(P1_env, s.A[i], s.A[i])
-            P2_env = eps_l_noop(P2_env, s.A[i], s.A[i])
-        env = P1_env - P2_env
-        S, V = sp.linalg.eigh(env)
-        s1 = S > 0
-        s2 = S <= 0
-        print("env spec: ", S)  # DEBUG
-        R1 = sp.dot(V[:,s1], V[:,s1].conjugate().transpose())
-        R2 = sp.dot(V[:,s2], V[:,s2].conjugate().transpose())
+        # Now that we have the projectors at the boundary of L and M, find the
+        # best ones to match at the boundary of M and R.
+        # To do this, "transfer" P1 and P2 through M with the MPS transfer
+        # matrix. This gives you two environment tensors, living at i2,
+        # representing the two branches. To find the optimal projectors at i2,
+        # take the difference of the two environments and diagonalize it.
+        # Positive eigenvalues should then belong in one branch, negative ones
+        # in the other. To see that this really is the optimal choice, go draw
+        # some diagrams for
+        # ||P_{1,L} TM - P_{1,L} TM P_{1,R}||^2
+        # + ||P_{2,L} TM - P_{2,L} TM P_{2,R}||^2.
+        counter = 0
+        change = sp.inf
+        while (counter < pars["projopt_iters"]
+               and change > pars["projopt_threshold"]):
+            P1_old, P2_old = P1, P2
+            P1, P2, R1, R2 = optimize_branch_projectors(s, i1, i2, P1, P2)
+            change = sp.linalg.norm(P1 - P1_old) + sp.linalg.norm(P2 - P2_old)
+            counter += 1
         projector_list_R = [R1, R2]
+    projector_list_L = [P1, P2]
+
+    if 0 in map(sp.linalg.norm, projector_list_L):
+        msg = "Can't branch since projectors are trivial."
+        logging.info(msg)
+        return [s_orig], [1.0]
 
     # Construct the branches.
     branch_list = []
@@ -376,9 +356,9 @@ def find_two_branches_sparse(s, pars):
     # TODO This could be done in a more clever way using canonicality
     # properties of the original MPS/the fact that we know what l and r are and
     # how the branches are related to the original state through virtual
-    # projectors. Note that the optimality of this choice already relies on the
-    # branches being orthogonal. I'll leave this the way it is for now though,
-    # because this is fool-proof and not very costly.
+    # projectors. Note that the optimality of this choice of coefficients
+    # already relies on the branches being orthogonal. I'll leave this the way
+    # it is for now though, because this is fool-proof and not very costly.
     coeff_list = [mps_overlap(s_orig, branch) for branch in branch_list]
 
     if "M" in pars["system_for_records"]:
@@ -413,7 +393,7 @@ def find_two_branches_sparse(s, pars):
                 )[0]
     
     fid = sum(abs(sp.array(coeff_list))**2)
-    msg = "Found a branch decomposition with with local (i1, i2) bond dimensions ({}, {}) and ({}, {}) and coefficients {} and {}.".format(dim_list_L[0], dim_list_R[0], dim_list_L[1], dim_list_R[1], *coeff_list)
+    msg = "Found a branch decomposition with local (i1, i2) bond dimensions ({}, {}) and ({}, {}) and coefficients {} and {}.".format(dim_list_L[0], dim_list_R[0], dim_list_L[1], dim_list_R[1], *coeff_list)
     logging.info(msg)
     msg = "Fidelity: {}".format(fid)
     logging.info(msg)

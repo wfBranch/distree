@@ -12,6 +12,7 @@ import evoMPS.tdvp_gen as tdvp
 import functools as ft
 import copy
 import time
+from collections import Iterable
 
 def vectorize(s):
     """ Input: evoMPS.mps_gen.EvoMPS_MPS_Generic (in mps_gen.py), object s
@@ -281,7 +282,7 @@ def add_MPS(s1,s2,coeffs=[1,1],do_update=True,i1=1,i2='end'):
     s = copy.deepcopy(s1)
     s.D=D
     s.A=A
-    truncate_bonds(s,do_update=do_update)
+    truncate_bonds(s,do_update=do_update,zero_tol=1e-13)
     return s
 
 def add_MPS_list(sList,coeffs=None,zero_tol = 1E-2, do_update=True,i1=None,i2=None):
@@ -293,21 +294,21 @@ def add_MPS_list(sList,coeffs=None,zero_tol = 1E-2, do_update=True,i1=None,i2=No
     N=sList[0].N
     if coeffs == None:
         coeffs = [1]*N
-    if isinstance(coeffs,list):
+    if isinstance(coeffs, Iterable):
         coeffs = np.array(coeffs)
     coeffs=coeffs/la.norm(coeffs)*np.sqrt(N)
     if i1==None:
         i1=[1]*len(sList)
     if i2==None:
-        i2=[N]*N
+        i2=[N]*len(sList)
     s=None
     for i in range(0,len(sList)):
         if np.abs(coeffs[i])>zero_tol:
             if s==None:
                 s=copy.deepcopy(sList[i])
-                s.A[i+1]=s.A[i+1]*coeffs[i]
+                s.A[i1[i]+1]=s.A[i1[i]+1]*coeffs[i]
             else:
-                s = add_MPS(s,sList[i],coeffs=[1,coeffs[i]],do_update=False,i1=i1[i-1],i2=i2[i-1])
+                s = add_MPS(s,sList[i],coeffs=[1,coeffs[i]],do_update=False,i1=i1[i],i2=i2[i])
                 # avoid udpating to avoid getting an arbitrary phase
 
     if do_update:

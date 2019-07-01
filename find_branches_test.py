@@ -64,16 +64,22 @@ def main():
     N = 100  # Number of sites
     d = 2   # Physical dimension
     q = [d]*(N+1)
-    noise_factor = 0e-4  # Coefficients for random noise to add to As
+    noise_factor = 1e-3  # Coefficients for random noise to add to As
+    eliminate_records_in = ""
 
     # Parameters for the block finding.
     pars = {
         "i1": None,
         "i2": None,
-        "system_for_records": "RM",
-        "eps_fidelity": 1e-3,
-        "eps_M_nonint": 1e-3,
+        "system_for_records": "MR",
+        "eps_fidelity": 1e-2,
+        "eps_M_nonint": 1e-2,
         "k": 20,
+        "comm_tau": 1e-2,
+        "comm_threshold": 1e-5,
+        "comm_iters": 1000,
+        "projopt_iters": 100,
+        "projopt_threshold": 1e-10,
     }
 
     # Bond dimensions of the terms in the sum
@@ -82,9 +88,10 @@ def main():
     #    [1,3,5,6,5,5,8,7,4,2,1]
     #]
     Ds = [
-        [3]*(N+1),
-        [3]*(N+1),
-        [3]*(N+1),
+        [20]*(N+1),
+        [20]*(N+1),
+        [20]*(N+1),
+        [20]*(N+1),
         #[4,7,8,3,5,6,4,2,3,2,3,2,5,3,2],  # Requires N=14
         #[5,4,8,3,6,9,7,4,5,8,6,5,7,4,5],
         #[7,4,8,9,6,3,3,2,4,7,9,7,6,7,4],
@@ -105,6 +112,24 @@ def main():
         term.randomize()
         Ds[b] = term.D  # This may have changed due to updates by evoMPS
         orig_terms.append(term)
+    if eliminate_records_in:
+        if pars["i1"] and pars["i2"] and 1 <= pars["i1"] <= pars["i2"] <= N:
+            i1_temp = pars["i1"]
+            i2_temp = pars["i2"]
+        else:
+            i1_temp = int(N/3) + 1
+            i2_temp = N - int(N/3)
+        s0 = orig_terms[0]
+        for s in orig_terms[1:]:
+            if "R" in eliminate_records_in:
+                for i in range(i2_temp+1, N+1):
+                    s.A[i] = deepcopy(s0.A[i])
+                    s.D[i] = s0.D[i]
+            if "M" in eliminate_records_in:
+                for i in range(i1_temp, i2_temp+1):
+                    s.A[i] = deepcopy(s0.A[i])
+                    s.D[i] = s0.D[i]
+            s.update()
 
     # ...sort them by coefficient, for convenience...
     order = np.argsort(-abs(np.array(orig_coeffs)))
@@ -115,6 +140,7 @@ def main():
 
     # ...take their weighted sum and add some noise to it...
     lincomb = mps_ext.add_MPS_list(orig_terms, coeffs=orig_coeffs)
+    lincomb_nonoise = deepcopy(lincomb)
     lincomb.add_noise(noise_factor)
 
     logging.info("Original coefficients: {}".format(orig_coeffs))
@@ -153,6 +179,10 @@ def main():
     fid_reco = mps_overlap(lincomb_reco, lincomb)
     logging.info("Reconstructed fidelity: {} (abs {})"
                  .format(fid_reco, abs(fid_reco)))
+    logging.info("Fidelity of no-noise vs target: {}"
+                 .format(abs(mps_overlap(lincomb, lincomb_nonoise))))
+    logging.info("Fidelity of no-noise vs reco:   {}"
+                 .format(abs(mps_overlap(lincomb_reco, lincomb_nonoise))))
 
 if __name__ == "__main__":
     main()
