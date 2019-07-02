@@ -73,7 +73,21 @@ def find_branches_sparse(s, pars):
     parameters.
     """
     outer_branches, outer_coeffs = find_two_branches_sparse(s, pars)
-    if len(outer_branches) > 1:
+    recurse = len(outer_branches) > 1
+    # Filter out branches with tiny coefficients. They will simply be truncated
+    # away. Note that we do this after checking whether branching happened at
+    # all, so that even if we only keep one branch, we still try recurse on it,
+    # since it has changed due to the truncation.
+    i = 0
+    while i < len(outer_coeffs):
+        if abs(outer_coeffs[i]) < pars["coeff_tol"]:
+            msg = "Filtering out a branch with a small coefficient ({}).".format(outer_coeffs[i])
+            logging.info(msg)
+            del(outer_coeffs[i])
+            del(outer_branches[i])
+        else:
+            i += 1
+    if recurse:
         total_branches = []
         total_coeffs = []
         for branch, coeff in zip(outer_branches, outer_coeffs):
@@ -398,7 +412,7 @@ def find_two_branches_sparse(s, pars):
     msg = "Fidelity: {}".format(fid)
     logging.info(msg)
     if "M" in pars["system_for_records"]:
-        msg = "Non-interference on M: {}".format(M_nonint)
+        msg = "Interference on M: {}".format(M_nonint)
         logging.info(msg)
 
     if 1 - fid > pars["eps_fidelity"]:

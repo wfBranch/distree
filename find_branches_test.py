@@ -74,6 +74,7 @@ def main():
         "system_for_records": "MR",
         "eps_fidelity": 1e-2,
         "eps_M_nonint": 1e-2,
+        "coeff_tol": 1e-4,
         "k": 20,
         "comm_tau": 1e-2,
         "comm_threshold": 1e-5,
