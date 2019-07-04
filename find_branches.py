@@ -244,7 +244,15 @@ def find_two_branches_sparse(s, pars):
                 state_i = state_i/sp.linalg.norm(state_i)
                 A_i = sp.tensordot(s.A[i], state_i, axes=(0, 0))
                 M = sp.dot(M, A_i)
-            M = sp.dot(M, M.conjugate().transpose())
+            M = M.conjugate().transpose()
+            for i in reversed(range(i1, i2+1)):
+                state_i = sp.random.randn(s.q[i])
+                if s.typ == sp.complex_:
+                    state_i = state_i + 1j*sp.random.randn(s.q[i])
+                state_i = state_i/sp.linalg.norm(state_i)
+                A_i = sp.tensordot(s.A[i], state_i, axes=(0, 0))
+                M = sp.dot(A_i, M)
+            M = M + M.conjugate().transpose()
             # TODO Choose how to normalize the M's. Here's one choice, a couple
             # of lines below is another candidate.
             M /= sp.linalg.norm(M)
@@ -257,10 +265,13 @@ def find_two_branches_sparse(s, pars):
         for j in range(pars["k"]):
             # TODO Do we want positive definite matrices like below, or should
             # we only pick product states?
-            M = sp.random.randn(dimR, dimR)
+            ket_state = sp.random.randn(dimR)
+            bra_state = sp.random.randn(dimR)
             if s.typ == sp.complex_:
-                M = M + 1j*sp.random.randn(dimR, dimR)
-            M = sp.dot(M, M.conjugate().transpose())
+                ket_state = ket_state + 1j*sp.random.randn(dimR)
+                bra_state = bra_state + 1j*sp.random.randn(dimR)
+            M = sp.outer(ket_state, bra_state)
+            M = M + M.conjugate().transpose()
             M = M/sp.linalg.norm(M)
             for i in reversed(range(i1, i2+1)):
                 M = eps_r_noop(M, s.A[i], s.A[i])
@@ -373,7 +384,11 @@ def find_two_branches_sparse(s, pars):
     # projectors. Note that the optimality of this choice of coefficients
     # already relies on the branches being orthogonal. I'll leave this the way
     # it is for now though, because this is fool-proof and not very costly.
-    coeff_list = [mps_overlap(s_orig, branch) for branch in branch_list]
+    coeffs_complex = [mps_overlap(s_orig, branch) for branch in branch_list]
+    coeff_list = [abs(c) for c in coeffs_complex]
+    coeff_phases = [c/ac for c, ac in zip(coeffs_complex, coeff_list)]
+    for i in range(len(branch_list)):
+        branch_list[i].A[1] *= coeff_phases[i]
 
     if "M" in pars["system_for_records"]:
         TM_shp = (dim_list_L[0]*dim_list_L[1], dim_list_R[0]*dim_list_R[1])
