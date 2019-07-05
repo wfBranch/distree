@@ -289,19 +289,17 @@ def find_two_branches_sparse(s, pars):
     decompositions = [sp.linalg.eigh(M) for M in matrices]
     bases = [d[1] for d in decompositions]
     bases_dg = [U.conjugate().transpose() for U in bases]
-    diff_matrices = [sp.reshape(d[0], (1,-1)) - sp.reshape(d[0], (-1,1))
+    diff_matrices = [abs(sp.reshape(d[0], (1,-1))
+                         - sp.reshape(d[0], (-1,1)))**2
                      for d in decompositions]
-    filter_matrices = [sp.exp(-pars["comm_tau"]*abs(M)**2) for M in diff_matrices]
-    X = sp.zeros_like(matrices[0])
-    for M in matrices:
-        X += sp.random.randn(1)*M
-    X /= sp.linalg.norm(X)
-    change = sp.inf
-    counter = 0
-    eye = sp.eye(X.shape[0])/X.shape[0]
+    filter_matrices = [sp.exp(-pars["comm_tau"]*M) for M in diff_matrices]
 
-    while counter < pars["comm_iters"] and change > pars["comm_threshold"]:
-        X_old = X
+    counter = 0  # DEBUG
+    def C_func(X):
+        # DEBUG
+        #shp = X.shape
+        #X = sp.reshape(X, (dimL, dimL))
+        # END DEBUG
         for i in range(len(matrices)):
             U = bases[i]
             U_dg = bases_dg[i]
@@ -310,12 +308,109 @@ def find_two_branches_sparse(s, pars):
             # precomputation? One could at least multiply consecutive Us
             # together.
             X = sp.dot(U_dg, sp.dot(X, U))
-            X = X * filter_matrix
+            X *= filter_matrix
             X = sp.dot(U, sp.dot(X, U_dg))
-            X = X - eye*sp.trace(X)
-            X /= sp.linalg.norm(X)
-        change = sp.linalg.norm(X - X_old)
+        # DEBUG
+        #X -= sp.trace(X)*eye
+        #X = sp.reshape(X, shp)
+        #nonlocal counter
+        #counter += 1
+        #print(counter)
+        # END DEBUG
+        return X
+
+    # Find an initial guess for the element int the kernel.
+    X = sp.zeros_like(matrices[0])
+    for M in matrices:
+        X += sp.random.randn(1)*M
+    X /= sp.linalg.norm(X)
+    eye = sp.eye(X.shape[0])/X.shape[0]
+    X -= eye*sp.trace(X)
+    X_old = sp.zeros_like(X)
+    D = deepcopy(X)
+
+    # DEBUG
+    #C = spsla.LinearOperator((dimL**2, dimL**2), C_func)
+    #S, U = spsla.eigsh(C, k=1, v0=sp.reshape(X, (-1,)),
+    #                   maxiter=pars["comm_iters"])
+    #X_new = sp.reshape(U[:,0], (dimL, dimL))
+    #print(S)
+    #print(sp.reshape(U[:,0], (dimL, dimL)))
+    #print(sp.linalg.eigh(X_new)[0])
+    #print(sp.linalg.norm(C.matvec(sp.reshape(X, (-1,)))))
+    #input()
+    # END DEBUG
+
+    change = sp.inf
+    counter = 0
+    while counter < pars["comm_iters"] and change > pars["comm_threshold"]:
+        X = C_func(X)
+        X -= eye*sp.trace(X)
+        # Note that this X_norm is also the value of the cost function. This is
+        # because X was normalized before applying C_func.
+        X_norm = sp.linalg.norm(X)
+        cost_now = sp.sqrt(X_norm)
+        X /= X_norm
+        D_old = D
+        D = X - X_old
+        X_old = deepcopy(X)
+        change = sp.linalg.norm(D)
         counter += 1
+        print(X_norm, change, counter)  # DEBUG
+
+        # If the change between X_i and X_{i-1} is roughly proportional to the
+        # change between X_{i-1} and X_{i-2}, then it seems that X is changing
+        # linearly, and thus we attempt a line search of the form
+        # X_{i+1} = X_i + alpha (X_i - X_{i-1}).
+        if sp.var(D/D_old) < pars["comm_linesearch_threshold"]:
+            # The next two lines cost as much as two normal iterations.
+            # Everything else in this line search is O(D^2). So as long as
+            # alpha > 2, we are winning.
+            CD = C_func(D)
+            CX = C_func(X)
+            DCCD = sp.linalg.norm(CD)**2
+            XCCX = sp.linalg.norm(CX)**2
+            DCCX = sp.vdot(CD, CX)  # Conjugation is automatic in vdot
+            XCCD = DCCX.conjugate()
+            XX = sp.linalg.norm(X)**2
+            DD = sp.linalg.norm(D)**2
+            XD = sp.vdot(X, D)  # Conjugation is automatic in vdot
+            DX = XD.conjugate()
+            # The optimal alpha is the root of a second order polynomial. Find
+            # the two possible roots, and check which one gives a higher value
+            # for the cost function ||C(X+alpha*D)|| / ||X+alpha*D||.
+            a = DCCD*XD - XCCD*DD
+            b = DCCD*XX + DCCX*XD - XCCX*DD - XCCD*DX
+            c = DCCX*XX - XCCX*DX
+            alpha_plus = (-b + sp.sqrt(b**2 - 4*a*c))/(2*a)
+            alpha_minus = (-b - sp.sqrt(b**2 - 4*a*c))/(2*a)
+            # TOOD Can we get clever about knowing which of the two solutions
+            # is the maximum? It's just a rational function after all. Not that
+            # this takes long, but just for beauty and simplicity.
+            cost_plus = sp.sqrt(abs(
+                (XCCX + abs(alpha_plus)**2*DCCD
+                 + sp.conj(alpha_plus)*DCCX + alpha_plus*XCCD)
+                /
+                (XX + abs(alpha_plus)**2*DD
+                 + sp.conj(alpha_plus)*DX + alpha_plus*XD)
+            ))
+            cost_minus = sp.sqrt(abs(
+                (XCCX + abs(alpha_minus)**2*DCCD
+                 + sp.conj(alpha_minus)*DCCX + alpha_minus*XCCD)
+                /
+                (XX + abs(alpha_minus)**2*DD
+                 + sp.conj(alpha_minus)*DX + alpha_minus*XD)
+            ))
+
+            alpha = alpha_plus if cost_plus > cost_minus else alpha_minus
+            X += alpha*D
+            X -= eye*sp.trace(X)
+            X /= sp.linalg.norm(X)
+            # Since this line search bit cost as much as two regular steps, we
+            # increase counter by 2. This we comm_iters stays roughly
+            # proportional to the time taken by the whole procedure.
+            counter += 2
+    print("Finding an element in the kernel finished with {} iterations and achieved {} convergence.".format(counter, change))
 
     # Diagonalize X. Its eigenbasis is the basis in which we will project onto
     # the branches. In an ideal world with perfect records, the spectrum of X
@@ -327,11 +422,14 @@ def find_two_branches_sparse(s, pars):
     # of A into two blocks that minimizes this error measure.
     S, V = sp.linalg.eigh(X)
     matrices_V = [sp.dot(V.conjugate().transpose(), sp.dot(M, V))
-                    for M in matrices]
+                  for M in matrices]
     A = sum(abs(M)**2 for M in matrices_V)
     s1, s2 = find_blocks_in_basis(A)
     P1 = sp.dot(V[:,s1], V[:,s1].conjugate().transpose())
     P2 = sp.dot(V[:,s2], V[:,s2].conjugate().transpose())
+    # DEBUG
+    print("Spectrum of X: {}".format(S))
+    # END DEBUG
 
     if "R" in pars["system_for_records"]:
         # Now that we have the projectors at the boundary of L and M, find the
