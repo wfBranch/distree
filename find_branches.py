@@ -294,12 +294,7 @@ def find_two_branches_sparse(s, pars):
                      for d in decompositions]
     filter_matrices = [sp.exp(-pars["comm_tau"]*M) for M in diff_matrices]
 
-    counter = 0  # DEBUG
     def C_func(X):
-        # DEBUG
-        #shp = X.shape
-        #X = sp.reshape(X, (dimL, dimL))
-        # END DEBUG
         for i in range(len(matrices)):
             U = bases[i]
             U_dg = bases_dg[i]
@@ -310,107 +305,95 @@ def find_two_branches_sparse(s, pars):
             X = sp.dot(U_dg, sp.dot(X, U))
             X *= filter_matrix
             X = sp.dot(U, sp.dot(X, U_dg))
-        # DEBUG
-        #X -= sp.trace(X)*eye
-        #X = sp.reshape(X, shp)
-        #nonlocal counter
-        #counter += 1
-        #print(counter)
-        # END DEBUG
         return X
 
-    # Find an initial guess for the element int the kernel.
+    # An initial guess for the element in the kernel.
     X = sp.zeros_like(matrices[0])
     for M in matrices:
         X += sp.random.randn(1)*M
-    X /= sp.linalg.norm(X)
     eye = sp.eye(X.shape[0])/X.shape[0]
     X -= eye*sp.trace(X)
-    X_old = sp.zeros_like(X)
-    D = deepcopy(X)
+    X /= sp.linalg.norm(X)
 
-    # DEBUG
-    #C = spsla.LinearOperator((dimL**2, dimL**2), C_func)
-    #S, U = spsla.eigsh(C, k=1, v0=sp.reshape(X, (-1,)),
-    #                   maxiter=pars["comm_iters"])
-    #X_new = sp.reshape(U[:,0], (dimL, dimL))
-    #print(S)
-    #print(sp.reshape(U[:,0], (dimL, dimL)))
-    #print(sp.linalg.eigh(X_new)[0])
-    #print(sp.linalg.norm(C.matvec(sp.reshape(X, (-1,)))))
-    #input()
-    # END DEBUG
-
+    # To find the element in the kernel, we do a power method combined with a
+    # line search: At each step i, we compute C X_i. In a power method, we
+    # would simply set X_{i+1} = C X_i. Instead, we take the difference
+    # D_i = C X_i - X_i, and search for the optimal alpha, such that the cost
+    # function (known as Rayleigh quotient)
+    # (X_i + alpha*D)^dagger C (X_i + alpha*D) / ||X_i + alpha*D||
+    # is maximized. We then set X_{i+1} = X_i + alpha*D. This was motivated by
+    # the slow convergence of the power method and the observation that the
+    # steps D that were being taken had very little variance.
+    # TODO I have a strong feeling I'm reinventing the wheel here, and probably
+    # Lanczos methods as implemented by ARPACK are strictly better than my
+    # custom thing. However, ARPACK often simply throws convergence errors
+    # because C is a tough matrix, whereas I would always want the best
+    # approximation available, regardless of how bad it is. Would there be some
+    # way around this issue with ARPACK?
+    # TODO Or could we go all in with this approach, and do a polynomial line
+    # search? The alphas at consecutive steps are suspiciously similar.
+    CX = C_func(X)
+    D = CX - X
     change = sp.inf
     counter = 0
     while counter < pars["comm_iters"] and change > pars["comm_threshold"]:
-        X = C_func(X)
-        X -= eye*sp.trace(X)
-        # Note that this X_norm is also the value of the cost function. This is
-        # because X was normalized before applying C_func.
-        X_norm = sp.linalg.norm(X)
-        cost_now = sp.sqrt(X_norm)
-        X /= X_norm
-        D_old = D
-        D = X - X_old
+        # We compute the optimal alpha.
+        # Note that the following line is the leading order cost of this
+        # algorithm; All other steps in an iteration only cost O(D^2), but this
+        # one is of course O(D^3).
+        CD = C_func(D)
+        # Note that vdot automatically complex conjugates the first argument.
+        DCD = sp.vdot(D, CD)
+        XCX = sp.vdot(X, CX)
+        DCX = sp.vdot(D, CX)
+        XCD = sp.vdot(X, CD)
+        XX = sp.linalg.norm(X)**2
+        DD = sp.linalg.norm(D)**2
+        XD = sp.vdot(X, D)
+        DX = XD.conjugate()
+        # The optimal alpha is the root of a second order polynomial. Find
+        # the two possible roots, and check which one gives a higher value
+        # for the cost function ||C(X+alpha*D)|| / ||X+alpha*D||.
+        a = DCD*XD - XCD*DD
+        b = DCD*XX + DCX*XD - XCX*DD - XCD*DX
+        c = DCX*XX - XCX*DX
+        alpha_plus = (-b + sp.sqrt(b**2 - 4*a*c))/(2*a)
+        alpha_minus = (-b - sp.sqrt(b**2 - 4*a*c))/(2*a)
+        # TOOD Can we get clever about knowing which of the two solutions
+        # is the maximum? It's just a rational function after all. Not that
+        # this takes long, but just for beauty and simplicity.
+        cost_plus = sp.sqrt(abs(
+            (XCX + abs(alpha_plus)**2*DCD
+             + sp.conj(alpha_plus)*DCX + alpha_plus*XCD)
+            /
+            (XX + abs(alpha_plus)**2*DD
+             + sp.conj(alpha_plus)*DX + alpha_plus*XD)
+        ))
+        cost_minus = sp.sqrt(abs(
+            (XCX + abs(alpha_minus)**2*DCD
+             + sp.conj(alpha_minus)*DCX + alpha_minus*XCD)
+            /
+            (XX + abs(alpha_minus)**2*DD
+             + sp.conj(alpha_minus)*DX + alpha_minus*XD)
+        ))
+
+        alpha = alpha_plus if cost_plus > cost_minus else alpha_minus
+
         X_old = deepcopy(X)
-        change = sp.linalg.norm(D)
+        X += alpha*D
+        X_trace = sp.trace(X)
+        X -= eye*X_trace
+        X_norm = sp.linalg.norm(X)
+        X /= X_norm
+        # C is a linear operator and the identity should be its eigenvector
+        # with eigenvalue 1, so we know the following should hold.
+        CX = (CX + alpha*CD - eye*X_trace)/X_norm
+        D = CX - X
+
+        change = sp.linalg.norm(X - X_old)
         counter += 1
-        print(X_norm, change, counter)  # DEBUG
-
-        # If the change between X_i and X_{i-1} is roughly proportional to the
-        # change between X_{i-1} and X_{i-2}, then it seems that X is changing
-        # linearly, and thus we attempt a line search of the form
-        # X_{i+1} = X_i + alpha (X_i - X_{i-1}).
-        if sp.var(D/D_old) < pars["comm_linesearch_threshold"]:
-            # The next two lines cost as much as two normal iterations.
-            # Everything else in this line search is O(D^2). So as long as
-            # alpha > 2, we are winning.
-            CD = C_func(D)
-            CX = C_func(X)
-            DCCD = sp.linalg.norm(CD)**2
-            XCCX = sp.linalg.norm(CX)**2
-            DCCX = sp.vdot(CD, CX)  # Conjugation is automatic in vdot
-            XCCD = DCCX.conjugate()
-            XX = sp.linalg.norm(X)**2
-            DD = sp.linalg.norm(D)**2
-            XD = sp.vdot(X, D)  # Conjugation is automatic in vdot
-            DX = XD.conjugate()
-            # The optimal alpha is the root of a second order polynomial. Find
-            # the two possible roots, and check which one gives a higher value
-            # for the cost function ||C(X+alpha*D)|| / ||X+alpha*D||.
-            a = DCCD*XD - XCCD*DD
-            b = DCCD*XX + DCCX*XD - XCCX*DD - XCCD*DX
-            c = DCCX*XX - XCCX*DX
-            alpha_plus = (-b + sp.sqrt(b**2 - 4*a*c))/(2*a)
-            alpha_minus = (-b - sp.sqrt(b**2 - 4*a*c))/(2*a)
-            # TOOD Can we get clever about knowing which of the two solutions
-            # is the maximum? It's just a rational function after all. Not that
-            # this takes long, but just for beauty and simplicity.
-            cost_plus = sp.sqrt(abs(
-                (XCCX + abs(alpha_plus)**2*DCCD
-                 + sp.conj(alpha_plus)*DCCX + alpha_plus*XCCD)
-                /
-                (XX + abs(alpha_plus)**2*DD
-                 + sp.conj(alpha_plus)*DX + alpha_plus*XD)
-            ))
-            cost_minus = sp.sqrt(abs(
-                (XCCX + abs(alpha_minus)**2*DCCD
-                 + sp.conj(alpha_minus)*DCCX + alpha_minus*XCCD)
-                /
-                (XX + abs(alpha_minus)**2*DD
-                 + sp.conj(alpha_minus)*DX + alpha_minus*XD)
-            ))
-
-            alpha = alpha_plus if cost_plus > cost_minus else alpha_minus
-            X += alpha*D
-            X -= eye*sp.trace(X)
-            X /= sp.linalg.norm(X)
-            # Since this line search bit cost as much as two regular steps, we
-            # increase counter by 2. This we comm_iters stays roughly
-            # proportional to the time taken by the whole procedure.
-            counter += 2
-    print("Finding an element in the kernel finished with {} iterations and achieved {} convergence.".format(counter, change))
+    rayleigh_quotient = sp.vdot(X, CX)
+    print("Finding an element in the kernel finished with {} iterations and found an element with Rayleigh quotient {}.".format(counter, rayleigh_quotient))
 
     # Diagonalize X. Its eigenbasis is the basis in which we will project onto
     # the branches. In an ideal world with perfect records, the spectrum of X

@@ -58,6 +58,7 @@ def main():
     np.set_printoptions(linewidth=120, suppress=True)
     warnings.filterwarnings("error")
     seed = np.random.randint(1, 1e6)
+    seed = 882835  # DEBUG used to find only two branches
     logging.info("Seed: {}".format(seed))
     np.random.seed(seed)
 
@@ -77,8 +78,8 @@ def main():
         "coeff_tol": 1e-4,
         "k": 20,
         "comm_tau": 1e-2,
-        "comm_threshold": 1e-5,
-        "comm_iters": 1000,
+        "comm_threshold": 1e-7,
+        "comm_iters": 10000,
         "projopt_iters": 100,
         "projopt_threshold": 1e-10,
     }
