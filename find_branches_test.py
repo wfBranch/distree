@@ -58,7 +58,6 @@ def main():
     np.set_printoptions(linewidth=120, suppress=True)
     warnings.filterwarnings("error")
     seed = np.random.randint(1, 1e6)
-    seed = 882835  # DEBUG used to find only two branches
     logging.info("Seed: {}".format(seed))
     np.random.seed(seed)
 

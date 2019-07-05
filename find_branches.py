@@ -289,22 +289,33 @@ def find_two_branches_sparse(s, pars):
     decompositions = [sp.linalg.eigh(M) for M in matrices]
     bases = [d[1] for d in decompositions]
     bases_dg = [U.conjugate().transpose() for U in bases]
+    bases_comb_R = [sp.dot(bases_dg[i], bases[i+1])
+                    for i in range(len(bases)-1)]
+    bases_comb_L = [sp.dot(bases_dg[i+1], bases[i])
+                     for i in range(len(bases)-1)]
     diff_matrices = [abs(sp.reshape(d[0], (1,-1))
                          - sp.reshape(d[0], (-1,1)))**2
                      for d in decompositions]
     filter_matrices = [sp.exp(-pars["comm_tau"]*M) for M in diff_matrices]
 
     def C_func(X):
-        for i in range(len(matrices)):
-            U = bases[i]
-            U_dg = bases_dg[i]
+        U = bases[0]
+        U_dg = bases_dg[0]
+        filter_matrix = filter_matrices[0]
+        X = sp.dot(U_dg, sp.dot(X, U))
+        X *= filter_matrix
+        for i in range(1, len(matrices)):
+            UL = bases_comb_L[i-1]
+            UR = bases_comb_R[i-1]
             filter_matrix = filter_matrices[i]
             # TODO Is there a faster way to do the three next line, with some
             # precomputation? One could at least multiply consecutive Us
             # together.
-            X = sp.dot(U_dg, sp.dot(X, U))
+            X = sp.dot(UL, sp.dot(X, UR))
             X *= filter_matrix
-            X = sp.dot(U, sp.dot(X, U_dg))
+        U = bases[-1]
+        U_dg = bases_dg[-1]
+        X = sp.dot(U, sp.dot(X, U_dg))
         return X
 
     # An initial guess for the element in the kernel.
