@@ -150,31 +150,28 @@ def find_blocks_in_basis(A):
             break
     return s1, s2
 
-def optimize_branch_projectors(s, i1, i2, P1, P2):
+def optimize_branch_projectors(s, i1, i2, P1, P2, at=None):
+    assert(at == "i1" or at == "i2")
     P1_env = P1
     P2_env = P2
-    for i in range(i1, i2+1):
-        P1_env = eps_l_noop(P1_env, s.A[i], s.A[i])
-        P2_env = eps_l_noop(P2_env, s.A[i], s.A[i])
+    if at == "i1":
+        positions = reversed(range(i1, i2+1))
+        eps_map = eps_r_noop
+    else:
+        positions = range(i1, i2+1)
+        eps_map = eps_l_noop
+    for i in positions:
+        P1_env = eps_map(P1_env, s.A[i], s.A[i])
+        P2_env = eps_map(P2_env, s.A[i], s.A[i])
     env = P1_env - P2_env
     S, V = sp.linalg.eigh(env)
     s1 = S > 0
     s2 = S <= 0
     R1 = sp.dot(V[:,s1], V[:,s1].conjugate().transpose())
     R2 = sp.dot(V[:,s2], V[:,s2].conjugate().transpose())
-
-    R1_env = R1
-    R2_env = R2
-    for i in reversed(range(i1, i2+1)):
-        R1_env = eps_r_noop(R1_env, s.A[i], s.A[i])
-        R2_env = eps_r_noop(R2_env, s.A[i], s.A[i])
-    env = R1_env - R2_env
-    S, V = sp.linalg.eigh(env)
-    s1 = S > 0
-    s2 = S <= 0
-    P1 = sp.dot(V[:,s1], V[:,s1].conjugate().transpose())
-    P2 = sp.dot(V[:,s2], V[:,s2].conjugate().transpose())
-    return P1, P2, R1, R2
+    d1 = sp.count_nonzero(s1)
+    d2 = sp.count_nonzero(s2)
+    return R1, R2, d1, d2
 
 def find_two_branches_sparse(s, pars):
     """ Try to find two branches with records on regions L, M, R, where
@@ -203,7 +200,9 @@ def find_two_branches_sparse(s, pars):
     - pars["projopt_iters"] and pars["projopt_threshold"] are the maximum
       number of iterations and threshold for convergence when optimizing the
       projectors, alternating between the ones at i1 and the ones at i2.
+    - pars["verbosity"] is pretty self-explanatory.
     """
+    verb = pars["verbosity"]
     # Set the default i1 and i2 if no sensible values are provided.
     if pars["i1"] and pars["i2"] and 1 <= pars["i1"] <= pars["i2"] <= s.N:
         i1 = pars["i1"]
@@ -216,12 +215,14 @@ def find_two_branches_sparse(s, pars):
     dimR = s.D[i2]
 
     if dimL < 2:
-        msg = "Can't branch because D at i1 is already 1."
-        logging.info(msg)
+        if verb > 0:
+            msg = "Can't branch because D at i1 is already 1."
+            logging.info(msg)
         return [s], [1.0]
     if dimR < 2:
-        msg = "Can't branch because D at i2 is already 1."
-        logging.info(msg)
+        if verb > 0:
+            msg = "Can't branch because D at i2 is already 1."
+            logging.info(msg)
         return [s], [1.0]
 
     # We make a copy of s because we will change its gauge to search for
@@ -404,7 +405,9 @@ def find_two_branches_sparse(s, pars):
         change = sp.linalg.norm(X - X_old)
         counter += 1
     rayleigh_quotient = sp.vdot(X, CX)
-    print("Finding an element in the kernel finished with {} iterations and found an element with Rayleigh quotient {}.".format(counter, rayleigh_quotient))
+    if verb > 1:
+        msg = "Finding an element in the kernel finished in {} iterations and found an element with Rayleigh quotient {}.".format(counter, rayleigh_quotient)
+        logging.info(msg)
 
     # Diagonalize X. Its eigenbasis is the basis in which we will project onto
     # the branches. In an ideal world with perfect records, the spectrum of X
@@ -415,15 +418,20 @@ def find_two_branches_sparse(s, pars):
     # measured by the off-diagonal blocks of A. We then search for the division
     # of A into two blocks that minimizes this error measure.
     S, V = sp.linalg.eigh(X)
+    if verb > 3:
+        msg = "Spectrum of the matrix in the kernel: {}".format(S)
+        logging.info(msg)
     matrices_V = [sp.dot(V.conjugate().transpose(), sp.dot(M, V))
                   for M in matrices]
     A = sum(abs(M)**2 for M in matrices_V)
     s1, s2 = find_blocks_in_basis(A)
     P1 = sp.dot(V[:,s1], V[:,s1].conjugate().transpose())
     P2 = sp.dot(V[:,s2], V[:,s2].conjugate().transpose())
-    # DEBUG
-    print("Spectrum of X: {}".format(S))
-    # END DEBUG
+    P1d = len(s1)
+    P2d = len(s2)
+    if verb > 2:
+        msg = "Sizes of initial i1 branch projectors: {} & {}".format(P1d, P2d)
+        logging.info(msg)
 
     if "R" in pars["system_for_records"]:
         # Now that we have the projectors at the boundary of L and M, find the
@@ -442,15 +450,22 @@ def find_two_branches_sparse(s, pars):
         while (counter < pars["projopt_iters"]
                and change > pars["projopt_threshold"]):
             P1_old, P2_old = P1, P2
-            P1, P2, R1, R2 = optimize_branch_projectors(s, i1, i2, P1, P2)
+            R1, R2, R1d, R2d = optimize_branch_projectors(s, i1, i2, P1, P2,
+                                                          at="i2")
+            P1, P2, P1d, P2d = optimize_branch_projectors(s, i1, i2, R1, R2,
+                                                          at="i1")
             change = sp.linalg.norm(P1 - P1_old) + sp.linalg.norm(P2 - P2_old)
             counter += 1
         projector_list_R = [R1, R2]
+        if verb > 1:
+            msg = "Iterative optimization of projectors at i1 and i2 finished in {} iterations and dimensions ({}, {}) at i1 and ({}, {}) at i2.".format(counter, P1d, P2d, R1d, R2d)
+            logging.info(msg)
     projector_list_L = [P1, P2]
 
     if 0 in map(sp.linalg.norm, projector_list_L):
-        msg = "Can't branch since projectors are trivial."
-        logging.info(msg)
+        if verb > 0:
+            msg = "Can't branch since found projectors are trivial."
+            logging.info(msg)
         return [s_orig], [1.0]
 
     # Construct the branches.
@@ -464,8 +479,6 @@ def find_two_branches_sparse(s, pars):
                                         axes=(2,0))
         branch.update(auto_truncate=True)
         branch_list.append(branch)
-    dim_list_L = [b.D[i1-1] for b in branch_list]
-    dim_list_R = [b.D[i2] for b in branch_list]
 
     # Compute the coefficients the branches should have. Note that we compute
     # the fidelity with respect to s_orig, since updating s may have caused
@@ -483,6 +496,8 @@ def find_two_branches_sparse(s, pars):
         branch_list[i].A[1] *= coeff_phases[i]
 
     if "M" in pars["system_for_records"]:
+        dim_list_L = [b.D[i1-1] for b in branch_list]
+        dim_list_R = [b.D[i2] for b in branch_list]
         TM_shp = (dim_list_L[0]*dim_list_L[1], dim_list_R[0]*dim_list_R[1])
         if 0 in TM_shp:
             M_nonint = 0
@@ -514,31 +529,39 @@ def find_two_branches_sparse(s, pars):
                 )[0]
 
     fid = sum(abs(sp.array(coeff_list))**2)
-    msg = "Found a branch decomposition with local (i1, i2) bond dimensions ({}, {}) and ({}, {}) and coefficients {} and {}.".format(dim_list_L[0], dim_list_R[0], dim_list_L[1], dim_list_R[1], *coeff_list)
-    logging.info(msg)
-    msg = "Fidelity: {}".format(fid)
-    logging.info(msg)
-    if "M" in pars["system_for_records"]:
-        msg = "Interference on M: {}".format(M_nonint)
+
+    if verb > 0:
+        if "R" in pars["system_for_records"]:
+            msg = "Found a branch decomposition with bond dimensions ({}, {}) at i1 and ({}, {}) at i2, and coefficients {} and {}.".format(P1d, P2d, R1d, R2d, *coeff_list)
+        else:
+            msg = "Found a branch decomposition with bond dimensions ({}, {}) at i1, and coefficients {} and {}.".format(P1d, P2d, *coeff_list)
         logging.info(msg)
+        msg = "Fidelity: {}".format(fid)
+        logging.info(msg)
+        if "M" in pars["system_for_records"]:
+            msg = "Interference on M: {}".format(M_nonint)
+            logging.info(msg)
 
     if 1 - fid > pars["eps_fidelity"]:
-        msg = "Rejecting this decomposition due to too low fidelity."
-        logging.info(msg)
+        if verb > 0:
+            msg = "Rejecting this decomposition due to too low fidelity."
+            logging.info(msg)
         # s_orig instead of s, because s.update() may have caused a phase
         # change.
         branch_list = [s_orig]
         coeff_list = [1.0]
     elif "M" in pars["system_for_records"] and M_nonint > pars["eps_M_nonint"]:
-        msg = "Rejecting this decomposition due to too high interference on M."
-        logging.info(msg)
+        if verb > 0:
+            msg = "Rejecting this decomposition due to too high interference on M."
+            logging.info(msg)
         # s_orig instead of s, because s.update() may have caused a phase
         # change.
         branch_list = [s_orig]
         coeff_list = [1.0]
     else:
-        msg = "Accepting this decomposition."
-        logging.info(msg)
+        if verb > 0:
+            msg = "Accepting this decomposition."
+            logging.info(msg)
 
     return branch_list, coeff_list
 

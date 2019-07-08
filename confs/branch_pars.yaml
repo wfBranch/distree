@@ -13,6 +13,7 @@ comm_threshold: !!float 1e-5
 comm_iters: 1000
 projopt_iters: 100
 projopt_threshold: !!float 1e-10
+verbosity: 5
 # Parameters for the old version of branching.
 #system_for_records: BC
 #
