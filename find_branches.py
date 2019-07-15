@@ -287,126 +287,62 @@ def find_two_branches_sparse(s, pars):
     average_norm = sp.average([sp.linalg.norm(M) for M in matrices])
     matrices = [M/average_norm for M in matrices]
 
-    decompositions = [sp.linalg.eigh(M) for M in matrices]
-    bases = [d[1] for d in decompositions]
-    bases_dg = [U.conjugate().transpose() for U in bases]
-    bases_comb_R = [sp.dot(bases_dg[i], bases[i+1])
-                    for i in range(len(bases)-1)]
-    bases_comb_L = [sp.dot(bases_dg[i+1], bases[i])
-                     for i in range(len(bases)-1)]
-    diff_matrices = [abs(sp.reshape(d[0], (1,-1))
-                         - sp.reshape(d[0], (-1,1)))**2
-                     for d in decompositions]
-    filter_matrices = [sp.exp(-pars["comm_tau"]*M) for M in diff_matrices]
-
+    conjugates = [r.conjugate().transpose() for r in matrices]
+    squaresL = [sp.dot(rdg, r) for r, rdg in zip(matrices, conjugates)]
+    squaresR = [sp.dot(r, rdg) for r, rdg in zip(matrices, conjugates)]
     def C_func(X):
-        U = bases[0]
-        U_dg = bases_dg[0]
-        filter_matrix = filter_matrices[0]
-        X = sp.dot(U_dg, sp.dot(X, U))
-        X *= filter_matrix
-        for i in range(1, len(matrices)):
-            UL = bases_comb_L[i-1]
-            UR = bases_comb_R[i-1]
-            filter_matrix = filter_matrices[i]
-            # TODO Is there a faster way to do the three next line, with some
-            # precomputation? One could at least multiply consecutive Us
-            # together.
-            X = sp.dot(UL, sp.dot(X, UR))
-            X *= filter_matrix
-        U = bases[-1]
-        U_dg = bases_dg[-1]
-        X = sp.dot(U, sp.dot(X, U_dg))
-        return X
+        X = sp.reshape(X, (dimL, dimL))
+        res = sp.zeros_like(X)
+        for i in range(len(matrices)):
+            term1 = sp.dot(squaresL[i], X)
+            term2 = sp.dot(X, squaresR[i])
+            term3 = sp.dot(conjugates[i], sp.dot(X, matrices[i]))
+            res += term1 + term2 - 2*term3
+        res = sp.reshape(res, (dimL**2,))
+        return res
+    C_op = spsla.LinearOperator((dimL**2, dimL**2), C_func, dtype=s.typ)
 
-    # An initial guess for the element in the kernel.
+    #r = sp.eye(dimR, dtype=s.typ)
+    #for i in reversed(range(i1, i2+1)):
+    #    r = eps_r_noop(r, s.A[i], s.A[i])
+    #rT = r.transpose()
+    #def B_func(X):
+    #    X = sp.reshape(X, (dimL, dimL))
+    #    # The second term makes B treat X and Xdagger the same.
+    #    X = (sp.dot(X, r) + sp.dot(rT, X))/2
+    #    X = sp.reshape(X, (dimL**2,))
+    #    return X
+    #B_op = spsla.LinearOperator((dimL**2, dimL**2), B_func, dtype=s.typ)
+
+    # Find the lowest eigenvalue of C that is orthogonal to the identity.
     X = sp.zeros_like(matrices[0])
     for M in matrices:
         X += sp.random.randn(1)*M
     eye = sp.eye(X.shape[0])/X.shape[0]
     X -= eye*sp.trace(X)
     X /= sp.linalg.norm(X)
-
-    # To find the element in the kernel, we do a power method combined with a
-    # line search: At each step i, we compute C X_i. In a power method, we
-    # would simply set X_{i+1} = C X_i. Instead, we take the difference
-    # D_i = C X_i - X_i, and search for the optimal alpha, such that the cost
-    # function (known as Rayleigh quotient)
-    # (X_i + alpha*D)^dagger C (X_i + alpha*D) / ||X_i + alpha*D||
-    # is maximized. We then set X_{i+1} = X_i + alpha*D. This was motivated by
-    # the slow convergence of the power method and the observation that the
-    # steps D that were being taken had very little variance.
-    # TODO I have a strong feeling I'm reinventing the wheel here, and probably
-    # Lanczos methods as implemented by ARPACK are strictly better than my
-    # custom thing. However, ARPACK often simply throws convergence errors
-    # because C is a tough matrix, whereas I would always want the best
-    # approximation available, regardless of how bad it is. Would there be some
-    # way around this issue with ARPACK?
-    # TODO Or could we go all in with this approach, and do a polynomial line
-    # search? The alphas at consecutive steps are suspiciously similar.
-    CX = C_func(X)
-    D = CX - X
-    change = sp.inf
-    counter = 0
-    while counter < pars["comm_iters"] and change > pars["comm_threshold"]:
-        # We compute the optimal alpha.
-        # Note that the following line is the leading order cost of this
-        # algorithm; All other steps in an iteration only cost O(D^2), but this
-        # one is of course O(D^3).
-        CD = C_func(D)
-        # Note that vdot automatically complex conjugates the first argument.
-        DCD = sp.vdot(D, CD)
-        XCX = sp.vdot(X, CX)
-        DCX = sp.vdot(D, CX)
-        XCD = sp.vdot(X, CD)
-        XX = sp.linalg.norm(X)**2
-        DD = sp.linalg.norm(D)**2
-        XD = sp.vdot(X, D)
-        DX = XD.conjugate()
-        # The optimal alpha is the root of a second order polynomial. Find
-        # the two possible roots, and check which one gives a higher value
-        # for the cost function ||C(X+alpha*D)|| / ||X+alpha*D||.
-        a = DCD*XD - XCD*DD
-        b = DCD*XX + DCX*XD - XCX*DD - XCD*DX
-        c = DCX*XX - XCX*DX
-        alpha_plus = (-b + sp.sqrt(b**2 - 4*a*c))/(2*a)
-        alpha_minus = (-b - sp.sqrt(b**2 - 4*a*c))/(2*a)
-        # TOOD Can we get clever about knowing which of the two solutions
-        # is the maximum? It's just a rational function after all. Not that
-        # this takes long, but just for beauty and simplicity.
-        cost_plus = sp.sqrt(abs(
-            (XCX + abs(alpha_plus)**2*DCD
-             + sp.conj(alpha_plus)*DCX + alpha_plus*XCD)
-            /
-            (XX + abs(alpha_plus)**2*DD
-             + sp.conj(alpha_plus)*DX + alpha_plus*XD)
-        ))
-        cost_minus = sp.sqrt(abs(
-            (XCX + abs(alpha_minus)**2*DCD
-             + sp.conj(alpha_minus)*DCX + alpha_minus*XCD)
-            /
-            (XX + abs(alpha_minus)**2*DD
-             + sp.conj(alpha_minus)*DX + alpha_minus*XD)
-        ))
-
-        alpha = alpha_plus if cost_plus > cost_minus else alpha_minus
-
-        X_old = deepcopy(X)
-        X += alpha*D
-        X_trace = sp.trace(X)
-        X -= eye*X_trace
-        X_norm = sp.linalg.norm(X)
-        X /= X_norm
-        # C is a linear operator and the identity should be its eigenvector
-        # with eigenvalue 1, so we know the following should hold.
-        CX = (CX + alpha*CD - eye*X_trace)/X_norm
-        D = CX - X
-
-        change = sp.linalg.norm(X - X_old)
-        counter += 1
-    rayleigh_quotient = sp.vdot(X, CX)
-    if verb > 1:
-        msg = "Finding an element in the kernel finished in {} iterations and found an element with Rayleigh quotient {}.".format(counter, rayleigh_quotient)
+    X = sp.reshape(X, (dimL**2, 1))
+    Y = sp.reshape(eye, (dimL**2, 1))
+    try:
+        #S, U = spsla.lobpcg(C_op, X, Y=Y, M=B_op,
+        #                    largest=False, maxiter=pars["comm_iters"])
+        S, U = spsla.lobpcg(C_op, X, Y=Y,
+                            largest=False, maxiter=pars["comm_iters"])
+    except NotImplementedError:
+        # TODO If you use B_op above, use it here too.
+        # At low bond dimensions, lobpcg often throws
+        # "The dense eigensolver does not support constraints,"
+        # referring to Y. Work around that.
+        C_mat = C_op.matmat(sp.eye(dimL**2, dtype=X.dtype))
+        S, U = sp.linalg.eigh(C_mat)
+        # The lowest one is always the identity.
+        S = S[1:]
+        U = U[:,1:]
+    rayleigh_quotient = S[0]
+    X = sp.reshape(U[:,0], (dimL, dimL))
+    X = (X + X.conjugate().transpose())/2  # This should hold anyway.
+    if verb > 2:
+        msg = "Found an element in the kernel of C with Rayleigh quotien {}.".format(rayleigh_quotient)
         logging.info(msg)
 
     # Diagonalize X. Its eigenbasis is the basis in which we will project onto
@@ -496,37 +432,7 @@ def find_two_branches_sparse(s, pars):
         branch_list[i].A[1] *= coeff_phases[i]
 
     if "M" in pars["system_for_records"]:
-        dim_list_L = [b.D[i1-1] for b in branch_list]
-        dim_list_R = [b.D[i2] for b in branch_list]
-        TM_shp = (dim_list_L[0]*dim_list_L[1], dim_list_R[0]*dim_list_R[1])
-        if 0 in TM_shp:
-            M_nonint = 0
-        else:
-            def TM_func_rmatvec(X):
-                shp = X.shape
-                X = X.conjugate()
-                X = sp.reshape(X, (dim_list_L[0], dim_list_L[1]))
-                for i in range(i1, i2+1):
-                    X = eps_l_noop(X, branch_list[0].A[i], branch_list[1].A[i])
-                X = X.conjugate()
-                X = sp.reshape(X, TM_shp[1])
-                return X
-            def TM_func_matvec(X):
-                shp = X.shape
-                X = sp.reshape(X, (dim_list_R[0], dim_list_R[1]))
-                for i in reversed(range(i1, i2+1)):
-                    X = eps_r_noop(X, branch_list[0].A[i], branch_list[1].A[i])
-                X = sp.reshape(X, TM_shp[0])
-                return X
-            TM = spsla.LinearOperator(TM_shp, matvec=TM_func_matvec,
-                                      rmatvec=TM_func_rmatvec, dtype=s.typ)
-            if 1 in TM_shp or 2 in TM_shp:
-                TM_dense = TM.matmat(sp.eye(TM_shp[1]))
-                M_nonint = sp.linalg.svd(TM_dense)[1][0]
-            else:
-                M_nonint = spsla.svds(
-                    TM, k=1, return_singular_vectors=False
-                )[0]
+        M_nonint = evaluate_M_nonint(branch_list, i1, i2)
 
     fid = sum(abs(sp.array(coeff_list))**2)
 
@@ -565,3 +471,37 @@ def find_two_branches_sparse(s, pars):
 
     return branch_list, coeff_list
 
+def evaluate_M_nonint(branch_list, i1, i2):
+    dim_list_L = [b.D[i1-1] for b in branch_list]
+    dim_list_R = [b.D[i2] for b in branch_list]
+    TM_shp = (dim_list_L[0]*dim_list_L[1], dim_list_R[0]*dim_list_R[1])
+    if 0 in TM_shp:
+        M_nonint = 0
+    else:
+        def TM_func_rmatvec(X):
+            shp = X.shape
+            X = X.conjugate()
+            X = sp.reshape(X, (dim_list_L[0], dim_list_L[1]))
+            for i in range(i1, i2+1):
+                X = eps_l_noop(X, branch_list[0].A[i], branch_list[1].A[i])
+            X = X.conjugate()
+            X = sp.reshape(X, TM_shp[1])
+            return X
+        def TM_func_matvec(X):
+            shp = X.shape
+            X = sp.reshape(X, (dim_list_R[0], dim_list_R[1]))
+            for i in reversed(range(i1, i2+1)):
+                X = eps_r_noop(X, branch_list[0].A[i], branch_list[1].A[i])
+            X = sp.reshape(X, TM_shp[0])
+            return X
+        TM = spsla.LinearOperator(TM_shp, matvec=TM_func_matvec,
+                                  rmatvec=TM_func_rmatvec,
+                                  dtype=branch_list[0].typ)
+        if 1 in TM_shp or 2 in TM_shp:
+            TM_dense = TM.matmat(sp.eye(TM_shp[1]))
+            M_nonint = sp.linalg.svd(TM_dense)[1][0]
+        else:
+            M_nonint = spsla.svds(
+                TM, k=1, return_singular_vectors=False
+            )[0]
+    return M_nonint

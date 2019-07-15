@@ -56,7 +56,7 @@ def mps_overlap_matrix(mpses_rows, mpses_columns=None, normalize=True):
 
 def main():
     np.set_printoptions(linewidth=120, suppress=True)
-    warnings.filterwarnings("error")
+    #warnings.filterwarnings("error")
     seed = np.random.randint(1, 1e6)
     logging.info("Seed: {}".format(seed))
     np.random.seed(seed)
@@ -90,9 +90,9 @@ def main():
     #    [1,3,5,6,5,5,8,7,4,2,1]
     #]
     Ds = [
-        [30]*(N+1),
-        [30]*(N+1),
-        [30]*(N+1),
+        [20]*(N+1),
+        [20]*(N+1),
+        [20]*(N+1),
         #[4,7,8,3,5,6,4,2,3,2,3,2,5,3,2],  # Requires N=14
         #[5,4,8,3,6,9,7,4,5,8,6,5,7,4,5],
         #[7,4,8,9,6,3,3,2,4,7,9,7,6,7,4],
