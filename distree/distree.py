@@ -102,7 +102,8 @@ class Distree_PBS(Distree_Base):
                  scriptargs=[], python_command=sys.executable, precmd='',
                  res_list='', job_env='', working_dir=os.getcwd(),
                  canary_path='', working_dir_qsub=None, stream_dir='',
-                 need_ssh=False):
+                 need_ssh=False, max_jobs=None,
+                 submission_overflow_file=None):
         super().__init__(log_path, canary_path=canary_path)
 
         self.qname = qname
@@ -117,6 +118,16 @@ class Distree_PBS(Distree_Base):
         self.stream_dir = stream_dir
         self.schedule_host = schedule_host
         self.need_ssh = need_ssh
+        try:
+            self.max_jobs = int(max_jobs)  # The argument may be int or str.
+        except TypeError:
+            self.max_jobs = max_jobs
+        self.submission_overflow_file = submission_overflow_file
+
+        if (self.max_jobs is not None and self.max_jobs > 0
+                and submission_overflow_file is None):
+            msg = "If max_jobs is set, must specify a submission_overflow_file"
+            raise ValueError(msg)
 
         if working_dir_qsub:
             pathlib.Path(working_dir_qsub).mkdir(parents=True, exist_ok=True)
@@ -146,7 +157,7 @@ class Distree_PBS(Distree_Base):
             quote(jobname), 
         )
         if self.qname:
-            qsub_cmd += ' -q $s' % quote(self.qname)
+            qsub_cmd += ' -q %s' % quote(self.qname)
 
         if self.res_list:
             qsub_cmd += ' -l %s' % quote(self.res_list)
@@ -163,21 +174,39 @@ class Distree_PBS(Distree_Base):
 
         cmd = 'echo %s | %s' % (quote(scmd), qsub_cmd)
 
-        if socket.gethostname() == self.schedule_host or not self.need_ssh:
-            # Run qsub directly
-            p = subprocess.run(cmd, shell=True, cwd=self.working_dir_qsub,
+        if self.max_jobs is not None and self.max_jobs > 0:
+            jobcount_querycmd = "qsat -u $USER | wc -l"
+            p = subprocess.run(jobcount_querycmd, shell=True,
                                capture_output=True)
-            logging.info('Launched: %s' % cmd)
+            jobcount = int(p.stdout)
+            can_submit = jobcount < self.max_jobs
         else:
-            # SSH to remote host
-            ssh_cmd = ['ssh', self.schedule_host, cmd]
-            p = subprocess.run(ssh_cmd, cwd=self.working_dir_qsub,
-                               capture_output=True)
-            logging.info('Launched: %s' % ssh_cmd)
-        logging.info('Launch stdout:\n{}'.format(p.stdout))
-        logging.info('Launch stderr:\n{}'.format(p.stderr))
+            can_submit = True
 
-        p.check_returncode()
+        if can_submit:
+            if socket.gethostname() == self.schedule_host or not self.need_ssh:
+                # Run qsub directly
+                p = subprocess.run(cmd, shell=True, cwd=self.working_dir_qsub,
+                                   capture_output=True)
+                logging.info('Launched: %s' % cmd)
+            else:
+                # SSH to remote host
+                ssh_cmd = ['ssh', self.schedule_host, cmd]
+                p = subprocess.run(ssh_cmd, cwd=self.working_dir_qsub,
+                                   capture_output=True)
+                logging.info('Launched: %s' % ssh_cmd)
+            logging.info('Launch stdout:\n{}'.format(p.stdout))
+            logging.info('Launch stderr:\n{}'.format(p.stderr))
+            p.check_returncode()
+        else:
+            lock = filelock.FileLock(self.submission_overflow_file + '.lock')
+            with lock:
+                with open(self.submission_overflow_file, "a") as f:
+                    f.write(cmd)
+            msg = "Too many jobs are running already, wrote the submission command to the submission_overflow_file."
+            logging.info(msg)
+
+        return
 
 
 class Distree_Slurm(Distree_Base):

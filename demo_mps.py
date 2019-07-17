@@ -750,6 +750,16 @@ def parse_args():
                         help=("Shell command to run at the start of each job,"
                               " such as loading moudles."))
     parser.add_argument(
+        '--max_jobs',
+        type=str,
+        nargs="?",
+        dest='max_jobs',
+        default=0,
+        help=("Maximum number of parallel jobs allowed before the new ones are"
+              " written to a file instead of submitted. At the moment only"
+              " implemented for PBS.")
+    )
+    parser.add_argument(
         '-b',
         '--branch_pars',
         dest='branch_pars',
@@ -813,6 +823,12 @@ if __name__ == "__main__":
     # The job will be aborted if the canary file is deleted.
     canary_path = os.path.join(job_dir, "{}.canary".format(root_id))
 
+    # If too many jobs are about to be scheduled with PBS, the submission
+    # commands are instead written in this file.
+    submission_overflow_path = os.path.join(
+        job_dir, "{}_submission_overflow".format(root_id)
+    )
+
     # setup_logging is for the logging module, that is concerned with text
     # output (think print statements). It has nothing to do with the log file
     # of the Distree.
@@ -839,7 +855,8 @@ if __name__ == "__main__":
             '--PBSqueue', args.PBSqueue,
             '--PBSres', args.PBSres,
             '--PBSprecmd', args.PBSprecmd,
-            '--PBShost', args.PBShost
+            '--PBShost', args.PBShost,
+            '--max_jobs', args.max_jobs
         ]
         dtree = dst.Distree_PBS(
             log_path, sys.argv[0], args.PBSqueue, args.PBShost,
@@ -849,6 +866,8 @@ if __name__ == "__main__":
             precmd=args.PBSprecmd,
             res_list=args.PBSres,
             job_env='',
+            submission_overflow_file=submission_overflow_path,
+            max_jobs=args.max_jobs,
             stream_dir=os.path.join(job_dir, "PBS_logs/")
         )
     elif args.sched == 'slurm':
@@ -905,7 +924,7 @@ if __name__ == "__main__":
             't_max': 6.0,
             'coeff': 1.0,
             'measurement_frequency': 0.05,
-            'checkpoint_frequency': 100.,#0.1,   # If this is larger than t_max, the only time data is taken is the beginning and end of a task (i.e., immediately before and after branching events)
+            'checkpoint_frequency': 0.5,#100.,   # If this is larger than t_max, the only time data is taken is the beginning and end of a task (i.e., immediately before and after branching events)
             # Whether to, in the case of producing only one child, still treat
             # it like a branching event.
             'one_child_branches': False,
