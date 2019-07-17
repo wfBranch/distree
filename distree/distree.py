@@ -184,7 +184,8 @@ class Distree_PBS(Distree_Base):
             can_submit = True
 
         if can_submit:
-            if socket.gethostname() == self.schedule_host or not self.need_ssh:
+            if (socket.gethostname() == self.schedule_host
+                    or not self.needs_ssh):
                 # Run qsub directly
                 p = subprocess.run(cmd, shell=True, cwd=self.working_dir_qsub,
                                    capture_output=True)
