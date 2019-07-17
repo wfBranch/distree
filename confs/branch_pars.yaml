@@ -2,22 +2,13 @@ i1: 0 #if 0, will be set autmatically, e.g., the first third of the lattice
 i2: 0 #if 0, will be set autmatically, e.g., the second third of the lattice
 branch_check_time: 0.0025 #2. # How much time to wait before checking for branches again
 max_branch_ratio: 2 # Max number of child branches to create per parent.  If 0, there's no maximum.  If 1, there's no branching at all.
-coeff_tol: !!float 1e-4
+coeff_tol: !!float 1e-2
 # Parameters for the new, sparse branching algorithm.
 system_for_records: MR
 eps_fidelity: !!float 1e-2
 eps_M_nonint: !!float 1e-2
 k: 20
-comm_tau: !!float 1e-2
-comm_threshold: !!float 1e-5
-comm_iters: 1000
+comm_iters: 10000
 projopt_iters: 100
 projopt_threshold: !!float 1e-10
 verbosity: 5
-# Parameters for the old version of branching.
-#system_for_records: BC
-#
-#eps_ker_C: !!float 1e-4
-#coeff_tol: !!float 1e-6
-#degeneracy_tol: !!float 3e-4
-#transfer_operator_method: low_bond_dimension
