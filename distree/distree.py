@@ -102,7 +102,7 @@ class Distree_PBS(Distree_Base):
                  scriptargs=[], python_command=sys.executable, precmd='',
                  res_list='', job_env='', working_dir=os.getcwd(),
                  canary_path='', working_dir_qsub=None, stream_dir='',
-                 need_ssh=False, max_jobs=None,
+                 needs_ssh=False, max_jobs=None,
                  submission_overflow_file=None):
         super().__init__(log_path, canary_path=canary_path)
 
@@ -117,7 +117,7 @@ class Distree_PBS(Distree_Base):
         self.working_dir_qsub = working_dir_qsub
         self.stream_dir = stream_dir
         self.schedule_host = schedule_host
-        self.need_ssh = need_ssh
+        self.needs_ssh = needs_ssh
         try:
             self.max_jobs = int(max_jobs)  # The argument may be int or str.
         except TypeError:
