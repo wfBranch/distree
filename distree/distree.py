@@ -177,7 +177,7 @@ class Distree_PBS(Distree_Base):
         if self.max_jobs is not None and self.max_jobs > 0:
             # The grep is to only pick up lines that correspond to jobs that
             # are running or queued.
-            jobcount_querycmd = "qsat -u $USER | grep ' [QR] ' | wc -l"
+            jobcount_querycmd = "qstat -u $USER | grep ' [QR] ' | wc -l"
             p = subprocess.run(jobcount_querycmd, shell=True,
                                capture_output=True)
             jobcount = int(p.stdout)
@@ -205,7 +205,7 @@ class Distree_PBS(Distree_Base):
             lock = filelock.FileLock(self.submission_overflow_file + '.lock')
             with lock:
                 with open(self.submission_overflow_file, "a") as f:
-                    f.write(cmd)
+                    f.write(cmd + "\n")
             msg = "Too many jobs are running already, wrote the submission command to the submission_overflow_file."
             logging.info(msg)
 
