@@ -175,7 +175,9 @@ class Distree_PBS(Distree_Base):
         cmd = 'echo %s | %s' % (quote(scmd), qsub_cmd)
 
         if self.max_jobs is not None and self.max_jobs > 0:
-            jobcount_querycmd = "qsat -u $USER | wc -l"
+            # The grep is to only pick up lines that correspond to jobs that
+            # are running or queued.
+            jobcount_querycmd = "qsat -u $USER | grep ' [QR] ' | wc -l"
             p = subprocess.run(jobcount_querycmd, shell=True,
                                capture_output=True)
             jobcount = int(p.stdout)
