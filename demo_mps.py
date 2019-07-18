@@ -27,6 +27,7 @@ import datetime
 import argparse
 import matica
 import evoMPS.tdvp_gen as tdvp
+import evoMPS.tdvp_common as tdvp_common
 import pickle
 import h5py
 from evolve import evolve_mps
@@ -283,6 +284,39 @@ class MeasSchmidts(Meas):
             val[:len(coeffs), n] = coeffs
         return val
 
+# The eta and etaBB quantities of evoMPS, that tell us about the size and
+# projection error of the time evolution gradient.
+class MeasEtas(Meas):
+    def get_shape(self):
+        return (2,)
+
+    def get_dtype(self):
+        return np.float_
+
+    def measure(self, state, t, **kwargs):
+        # This is modified copypasta from the evoMPS source, from the Euler
+        # step function. We just avoid doing the other parts of the Euler step,
+        # to save effort. Not that some work is duplicated in recomputing the
+        # Vrh and Vlh in the beginning of each RK4 step. We assume the state is
+        # up-to-date.
+        l_s = sp.empty((state.N + 1), dtype=sp.ndarray)
+        l_si = sp.empty((state.N + 1), dtype=sp.ndarray)
+        r_s = sp.empty((state.N + 1), dtype=sp.ndarray)
+        r_si = sp.empty((state.N + 1), dtype=sp.ndarray)
+        Vrh = sp.empty((state.N + 1), dtype=sp.ndarray)
+        Vlh = sp.empty((state.N + 1), dtype=sp.ndarray)
+        for n in range(1, state.N + 1):
+            l_s[n-1], l_si[n-1], r_s[n], r_si[n] = tdvp_common.calc_l_r_roots(
+                state.l[n - 1], state.r[n], zero_tol=state.zero_tol,
+                sanity_checks=state.sanity_checks, sc_data=('site', n)
+            )
+            Vlh[n] = tdvp_common.calc_Vsh_l(state.A[n], l_s[n-1],
+                                   sanity_checks=state.sanity_checks)
+            Vrh[n] = tdvp_common.calc_Vsh(state.A[n], r_s[n],
+                                 sanity_checks=state.sanity_checks)
+        Y, etaBB_sq = state.calc_BB_Y_2s(l_s, l_si, r_s, r_si, Vrh, Vlh)
+        etaBB = sp.real(sp.sqrt(etaBB_sq.sum()))
+        return eta, etaBB
 
 def dump_yaml(data, base_dir, yaml_path):
     path = os.path.join(base_dir, yaml_path)
@@ -347,7 +381,8 @@ def initialize_measurements(job_dir, taskdata):
             'mag': MeasMag(N, Dmax),
             'bond_entropies': MeasEntropies(N, Dmax),
             'middle_schmidt_sqs': MeasSchmidtsMid(N, Dmax),
-            'all_schmidt': MeasSchmidts(N, Dmax)}
+            'all_schmidt': MeasSchmidts(N, Dmax),
+            'etas': MeasEtas(N, Dmax)}
 
 
 def initialize_measurement_data(job_dir, taskdata, meas):
@@ -923,7 +958,7 @@ if __name__ == "__main__":
             'branch_num': 0, 
             't_max': 6.0,
             'coeff': 1.0,
-            'measurement_frequency': 0.05,
+            'measurement_frequency': 0.002,
             'checkpoint_frequency': 0.5,#100.,   # If this is larger than t_max, the only time data is taken is the beginning and end of a task (i.e., immediately before and after branching events)
             # Whether to, in the case of producing only one child, still treat
             # it like a branching event.
