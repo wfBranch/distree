@@ -18,9 +18,28 @@ from scipy.linalg import expm
 
 def is_wellconditioned(s, D_max, tolerance):
     # Check that the full bond dimension is utilized everywhere.
+    # First get a safe bound for how far away from the edges we need to be for
+    # the physical bond dimension to be certainly more than D_max.
+    ldim, rdim = 1, 1
+    safe_n = 1
+    while (ldim < D_max or rdim < D_max) and safe_n <= s.N:
+        ldim *= s.q[safe_n]
+        rdim *= s.q[-safe_n]
+        safe_n += 1
+    # Then go through each bond and check.
     for n in range(s.N+1):
-        left_physical = reduce(op.mul, s.q[1:n], 1)
-        right_physical = reduce(op.mul, s.q[n+1:], 1)
+        # The physical bond dimensions can get huge, and we would then run into
+        # integer overflows. To avoid this, if we are beyond safe_n, we just
+        # set them to ldim or rdim, which are bigger than D_max, so D_max will
+        # dominate anyway.
+        if n > safe_n:
+            left_physical = ldim
+        else:
+            left_physical = reduce(op.mul, s.q[1:n], 1)
+        if n < s.N - safe_n:
+            right_physical = rdim
+        else:
+            right_physical = reduce(op.mul, s.q[n+1:], 1)
         # D_max_n is the maximum dimension this index can have.  It may be
         # dominated by being so close to the left or right end of the chain,
         # that the physical dimension limits the virtual one, or otherwise by
