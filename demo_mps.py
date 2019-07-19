@@ -316,6 +316,7 @@ class MeasEtas(Meas):
                                  sanity_checks=state.sanity_checks)
         Y, etaBB_sq = state.calc_BB_Y_2s(l_s, l_si, r_s, r_si, Vrh, Vlh)
         etaBB = sp.real(sp.sqrt(etaBB_sq.sum()))
+        eta = state.eta
         return eta, etaBB
 
 def dump_yaml(data, base_dir, yaml_path):
