@@ -316,7 +316,9 @@ class MeasEtas(Meas):
                                  sanity_checks=state.sanity_checks)
         Y, etaBB_sq = state.calc_BB_Y_2s(l_s, l_si, r_s, r_si, Vrh, Vlh)
         etaBB = sp.real(sp.sqrt(etaBB_sq.sum()))
-        eta = state.eta
+        eta = sp.real(state.eta)
+        if eta is None or sp.isnan(eta):
+            eta = sp.float_(0)  # The HDF6 storage can't handle NaNs.
         return eta, etaBB
 
 def dump_yaml(data, base_dir, yaml_path):
