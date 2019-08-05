@@ -318,7 +318,7 @@ class MeasEtas(Meas):
         etaBB = sp.real(sp.sqrt(etaBB_sq.sum()))
         eta = sp.real(state.eta)
         if eta is None or sp.isnan(eta):
-            eta = sp.float_(0)  # The HDF6 storage can't handle NaNs.
+            eta = sp.float_(0)  # The HDF5 storage can't handle NaNs.
         return eta, etaBB
 
 def dump_yaml(data, base_dir, yaml_path):
@@ -795,7 +795,7 @@ def parse_args():
         default=0,
         help=("Maximum number of parallel jobs allowed before the new ones are"
               " written to a file instead of submitted. At the moment only"
-              " implemented for PBS.")
+              " implemented for PBS and local schedulers.")
     )
     parser.add_argument(
         '-b',
@@ -878,7 +878,8 @@ if __name__ == "__main__":
         '--child', 
                     '--root_id', root_id,
                     '--jobdir', job_dir,
-        '--scheduler', args.sched
+        '--scheduler', args.sched,
+        '--max_jobs', args.max_jobs
                  ]
 
     if args.sched == 'local':
@@ -886,7 +887,9 @@ if __name__ == "__main__":
             log_path, 
             sys.argv[0], 
             scriptargs=scriptargs,
-            canary_path=canary_path
+            canary_path=canary_path,
+            max_jobs=args.max_jobs,
+            submission_overflow_file=submission_overflow_path
         )
     elif args.sched == 'PBS':
         scriptargs += [
@@ -894,7 +897,6 @@ if __name__ == "__main__":
             '--PBSres', args.PBSres,
             '--PBSprecmd', args.PBSprecmd,
             '--PBShost', args.PBShost,
-            '--max_jobs', args.max_jobs
         ]
         dtree = dst.Distree_PBS(
             log_path, sys.argv[0], args.PBSqueue, args.PBShost,

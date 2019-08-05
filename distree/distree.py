@@ -81,20 +81,60 @@ class Distree_Base():
 
 class Distree_Local(Distree_Base):
     def __init__(self, log_path, scriptpath, scriptargs=[],
-                 python_command=sys.executable, canary_path=''):
+                 python_command=sys.executable, canary_path='',
+                 max_jobs=None, submission_overflow_file=None):
+
         super().__init__(log_path, canary_path=canary_path)
 
         self.scriptpath = scriptpath
         self.scriptargs = scriptargs
         self.python_command = python_command
+        try:
+            self.max_jobs = int(max_jobs)  # The argument may be int or str.
+        except TypeError:
+            self.max_jobs = max_jobs
+        self.submission_overflow_file = submission_overflow_file
+
+        if (self.max_jobs is not None and self.max_jobs > 0
+                and submission_overflow_file is None):
+            msg = "If max_jobs is set, must specify a submission_overflow_file"
+            raise ValueError(msg)
 
     def schedule_task(self, task_id, parent_id, taskdata_path):
         super().schedule_task(task_id, parent_id, taskdata_path)
 
         args = ([self.python_command, self.scriptpath, taskdata_path]
                 + self.scriptargs)
-        logging.info('Running: {}'.format(args))
-        subprocess.Popen(args)
+
+        if self.max_jobs is not None and self.max_jobs > 0:
+            # The grep is to only pick up lines that correspond to jobs that
+            # are running or queued.
+            jobcount_querycmd = "ps x | grep 'python' | wc -l"
+            p = subprocess.run(jobcount_querycmd, shell=True,
+                               capture_output=True)
+            # -1 for "grep 'python'" showing up in ps x, and another -1 for the
+            # python subprocess itself.
+            jobcount = int(p.stdout) - 2
+            can_submit = jobcount < self.max_jobs
+        else:
+            can_submit = True
+
+        if can_submit:
+            logging.info('Running: {}'.format(args))
+            subprocess.Popen(args)
+        else:
+            cmd = '%s %s %s %s' % (
+                quote(self.python_command),
+                quote(self.scriptpath),
+                quote(taskdata_path),
+                " ".join(map(quote, self.scriptargs))
+            )
+            lock = filelock.FileLock(self.submission_overflow_file + '.lock')
+            with lock:
+                with open(self.submission_overflow_file, "a") as f:
+                    f.write(cmd + "\n")
+            msg = "Too many jobs are running already, wrote the submission command to the submission_overflow_file."
+            logging.info(msg)
 
 
 class Distree_PBS(Distree_Base):
