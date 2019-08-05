@@ -110,8 +110,14 @@ class Distree_Local(Distree_Base):
             # The grep is to only pick up lines that correspond to jobs that
             # are running or queued.
             jobcount_querycmd = "ps x | grep 'python' | wc -l"
-            p = subprocess.run(jobcount_querycmd, shell=True,
-                               capture_output=True)
+            try:
+                p = subprocess.run(jobcount_querycmd, shell=True,
+                                   capture_output=True)
+            except TypeError:
+                # This happens with python older than 3.7, which doesn't
+                # support capture_output.
+                p = subprocess.run(jobcount_querycmd, shell=True,
+                                   stdout=subprocess.PIPE)
             # -1 for "grep 'python'" showing up in ps x, and another -1 for the
             # python subprocess itself.
             jobcount = int(p.stdout) - 2
@@ -218,8 +224,14 @@ class Distree_PBS(Distree_Base):
             # The grep is to only pick up lines that correspond to jobs that
             # are running or queued.
             jobcount_querycmd = "qstat -u $USER | grep ' [QR] ' | wc -l"
-            p = subprocess.run(jobcount_querycmd, shell=True,
-                               capture_output=True)
+            try:
+                p = subprocess.run(jobcount_querycmd, shell=True,
+                                   capture_output=True)
+            except TypeError:
+                # This happens with python older than 3.7, which doesn't
+                # support capture_output.
+                p = subprocess.run(jobcount_querycmd, shell=True,
+                                   stdout=subprocess.PITE)
             jobcount = int(p.stdout)
             can_submit = jobcount < self.max_jobs
         else:
@@ -229,14 +241,28 @@ class Distree_PBS(Distree_Base):
             if (socket.gethostname() == self.schedule_host
                     or not self.needs_ssh):
                 # Run qsub directly
-                p = subprocess.run(cmd, shell=True, cwd=self.working_dir_qsub,
-                                   capture_output=True)
+                try:
+                    p = subprocess.run(cmd, shell=True,
+                                       cwd=self.working_dir_qsub,
+                                       capture_output=True)
+                except TypeError:
+                    # This happens with python older than 3.7, which doesn't
+                    # support capture_output.
+                    p = subprocess.run(cmd, shell=True,
+                                       cwd=self.working_dir_qsub,
+                                       stdout=subprocess.PIPE)
                 logging.info('Launched: %s' % cmd)
             else:
                 # SSH to remote host
                 ssh_cmd = ['ssh', self.schedule_host, cmd]
-                p = subprocess.run(ssh_cmd, cwd=self.working_dir_qsub,
-                                   capture_output=True)
+                try:
+                    p = subprocess.run(ssh_cmd, cwd=self.working_dir_qsub,
+                                       capture_output=True)
+                except TypeError:
+                    # This happens with python older than 3.7, which doesn't
+                    # support capture_output.
+                    p = subprocess.run(ssh_cmd, cwd=self.working_dir_qsub,
+                                       stdout=subprocess.PIPE)
                 logging.info('Launched: %s' % ssh_cmd)
             logging.info('Launch stdout:\n{}'.format(p.stdout))
             logging.info('Launch stderr:\n{}'.format(p.stderr))
