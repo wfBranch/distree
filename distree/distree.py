@@ -129,7 +129,7 @@ class Distree_Local(Distree_Base):
             logging.info('Running: {}'.format(args))
             subprocess.Popen(args)
         else:
-            cmd = '%s %s %s %s' % (
+            cmd = '%s %s %s %s &' % (
                 quote(self.python_command),
                 quote(self.scriptpath),
                 quote(taskdata_path),
