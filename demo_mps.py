@@ -475,6 +475,9 @@ def should_branch(state, t, t_increment, prev_branching_time, job_dir, taskdata)
     branch_pars = load_yaml(job_dir, taskdata["branch_pars_path"])
     branch_check_time = branch_pars["branch_check_time"]
     max_branch_ratio = branch_pars["max_branch_ratio"]
+    min_coeff_to_branch = branch_pars["min_coeff_to_branch"]
+    if taskdata["coeff"] < min_coeff_to_branch:
+        return False
     if max_branch_ratio == 1:
         return False
     # We check for branches after an amount of time branch_check_time 
@@ -530,6 +533,7 @@ def run_task(dtree, job_dir, taskdata_relpath):
         measurement_relpath = get_measurement_relpath(task_id)
         taskdata["measurement_path"] = measurement_relpath
         initialize_measurement_data(job_dir, taskdata, meas)
+        save_task_data(job_dir, taskdata_relpath, taskdata, task_id, parent_id)
 
     # Check if the job already has been run to a point where it has
     # branched.
@@ -575,6 +579,8 @@ def run_task(dtree, job_dir, taskdata_relpath):
             state_relpaths[t] = store_state_h5(job_dir, state, taskdata["coeff"], t=t, task_id=task_id)
             save_measurement_data(job_dir, state, taskdata, meas)
             prev_checkpoint = t
+            save_task_data(job_dir, taskdata_relpath, taskdata, task_id,
+                           parent_id)
 
         if should_branch(
                 state, t, t_increment, prev_branching_time, job_dir, taskdata
@@ -599,7 +605,7 @@ def run_task(dtree, job_dir, taskdata_relpath):
     # Save the final taskdata, overwriting the initial data file(s)
     # Note that the values in taskdata that have been modified, have been
     # modified in place.
-    save_task_data(job_dir, taskdata_relpath, taskdata, task_id, parent_id) 
+    save_task_data(job_dir, taskdata_relpath, taskdata, task_id, parent_id)
     logging.info("Task {} done.".format(task_id))
 
 
@@ -792,7 +798,7 @@ def parse_args():
         type=str,
         nargs="?",
         dest='max_jobs',
-        default=0,
+        default='0',
         help=("Maximum number of parallel jobs allowed before the new ones are"
               " written to a file instead of submitted. At the moment only"
               " implemented for PBS and local schedulers.")
