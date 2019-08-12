@@ -8,7 +8,7 @@ coeff_tol: !!float 1e-2
 system_for_records: MR
 eps_fidelity: !!float 1e-2
 eps_M_nonint: !!float 1e-2
-k: 20
+k: 50
 comm_iters: 10000
 projopt_iters: 100
 projopt_threshold: !!float 1e-10
