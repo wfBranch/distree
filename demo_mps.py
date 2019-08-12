@@ -1002,7 +1002,7 @@ if __name__ == "__main__":
             't_max': 6.0,
             'coeff': 1.0,
             'measurement_frequency': 0.05,
-            'checkpoint_frequency': 0.5,#100.,   # If this is larger than t_max, the only time data is taken is the beginning and end of a task (i.e., immediately before and after branching events)
+            'checkpoint_frequency': 0.25,  # If this is larger than t_max, the only time data is taken is the beginning and end of a task (i.e., immediately before and after branching events)
             # Whether to, in the case of producing only one child, still treat
             # it like a branching event.
             'one_child_branches': False,
