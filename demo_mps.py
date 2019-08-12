@@ -542,22 +542,39 @@ def run_task(dtree, job_dir, taskdata_relpath):
         msg = "Task {} already has children from a previous run.".format(task_id)
         raise NotImplementedError(msg)
 
-    prev_checkpoint = max(state_relpaths)
-    t = prev_checkpoint  # The current time in the evolution.
+    t = max(state_relpaths)  # The current time in the evolution.
+    state_relpath = state_relpaths[t]
+    state = load_state_h5(job_dir, state_relpath, initial_pars)
     if t >= taskdata["t_max"]:
         msg = "Task {} has already been previously completed. Exiting.".format(task_id)
         logging.info(msg)
         return
-
-    state_relpath = state_relpaths[t]
-    state = load_state_h5(job_dir, state_relpath, initial_pars)
     prev_branching_time = min(state_relpaths)
     prev_measurement_time = get_last_measurement_time(job_dir, taskdata)
     if prev_measurement_time < 0:
-        # No previous measurement exists.
+        # No previous measurement exists. This essentially just checks whether
+        # this job already has existing measurements.
         logging.info("Task {} measuring.".format(task_id))
         measure_data(state, t, meas)
         prev_measurement_time = t
+
+    measurement_freq = taskdata["measurement_frequency"]
+    next_measurement_time = np.ceil(t/measurement_freq) * measurement_freq
+    # We assume that the frequencies are nice numbers in base ten, and throw
+    # out floating point errors.
+    next_measurement_time = np.around(next_measurement_time, 13)
+    if next_measurement_time <= t:
+        next_measurement_time += measurement_freq
+        next_measurement_time = np.around(next_measurement_time, 13)
+
+    checkpoint_freq = taskdata["checkpoint_frequency"]
+    next_checkpoint_time = np.ceil(t/checkpoint_freq) * checkpoint_freq
+    # We assume that the frequencies are nice numbers in base ten, and throw
+    # out floating point errors.
+    next_checkpoint_time = np.around(next_checkpoint_time, 13)
+    if next_checkpoint_time <= t:
+        next_checkpoint_time += checkpoint_freq
+        next_checkpoint_time = np.around(next_checkpoint_time, 13)
 
     logging.info(
         "Starting the time evolution loop for task {}.".format(task_id)
@@ -577,18 +594,21 @@ def run_task(dtree, job_dir, taskdata_relpath):
         t = float(t)
         logging.info("Task {} at t={}.".format(task_id, t))
 
-        if t - prev_measurement_time >= taskdata["measurement_frequency"]:
+        if t >= next_measurement_time:
             logging.info("Task {} measuring.".format(task_id))
             measure_data(state, t, meas)
+            next_measurement_time += measurement_freq
+            next_measurement_time = np.around(next_measurement_time, 13)
             prev_measurement_time = t
 
-        if t - prev_checkpoint >= taskdata["checkpoint_frequency"]:
+        if t >= next_checkpoint_time:
             logging.info("Task {} checkpointing.".format(task_id))
             state_relpaths[t] = store_state_h5(job_dir, state, taskdata["coeff"], t=t, task_id=task_id)
             save_measurement_data(job_dir, state, taskdata, meas)
-            prev_checkpoint = t
             save_task_data(job_dir, taskdata_relpath, taskdata, task_id,
                            parent_id)
+            next_checkpoint_time += checkpoint_freq
+            next_checkpoint_time = np.around(next_checkpoint_time, 13)
 
         if should_branch(
                 state, t, t_increment, prev_branching_time, job_dir, taskdata
