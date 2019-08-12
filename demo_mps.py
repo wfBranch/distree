@@ -13,7 +13,6 @@ TODO:
 
 import scipy as sp
 import numpy as np
-import numpy.random as rnd
 import sys
 import os
 import socket
@@ -28,7 +27,6 @@ import argparse
 import matica
 import evoMPS.tdvp_gen as tdvp
 import evoMPS.tdvp_common as tdvp_common
-import pickle
 import h5py
 from evolve import evolve_mps
 from find_branches import find_branches_sparse
