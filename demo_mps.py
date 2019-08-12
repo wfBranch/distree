@@ -537,19 +537,29 @@ def run_task(dtree, job_dir, taskdata_relpath):
 
     # Check if the job already has been run to a point where it has
     # branched.
-    has_children = "children" in taskdata and taskdata["children"]
+    has_children = "num_children" in taskdata and taskdata["num_children"] > 0
     if has_children:
         # TODO Decide what to do here. Maybe ask the user to set some
         # command line parameter saying "Yes, please recreate children."
-        msg = "This task already has children."
+        msg = "Task {} already has children from a previous run.".format(task_id)
         raise NotImplementedError(msg)
 
     prev_checkpoint = max(state_relpaths)
     t = prev_checkpoint  # The current time in the evolution.
+    if t >= taskdata["t_max"]:
+        msg = "Task {} has already been previously completed. Exiting.".format(task_id)
+        logging.info(msg)
+        return
+
     state_relpath = state_relpaths[t]
     state = load_state_h5(job_dir, state_relpath, initial_pars)
     prev_branching_time = min(state_relpaths)
     prev_measurement_time = get_last_measurement_time(job_dir, taskdata)
+    if prev_measurement_time < 0:
+        # No previous measurement exists.
+        logging.info("Task {} measuring.".format(task_id))
+        measure_data(state, t, meas)
+        prev_measurement_time = t
 
     logging.info(
         "Starting the time evolution loop for task {}.".format(task_id)
@@ -591,18 +601,22 @@ def run_task(dtree, job_dir, taskdata_relpath):
             if num_branches > 1 or one_child_branches:
                 logging.info("Task {}, branched into {} child(ren)."
                                 .format(task_id, num_branches))
+                save_task_data(job_dir, taskdata_relpath, taskdata, task_id,
+                               parent_id)
                 break
             else:
                 logging.info("Task {}, no branches found.".format(task_id))
                 prev_branching_time = t
 
-    # Always store the state at the end of the simulation.
-    # TODO Fix the fact that this gets run even if t > t_max from the
-    # start.
+    # Always do a measurement and store the state at the end of the simulation.
+    if t != prev_measurement_time:
+        logging.info("Task {} measuring.".format(task_id))
+        measure_data(state, t, meas)
+    logging.info("Task {} storing final state.".format(task_id))
     state_relpaths[t] = store_state_h5(job_dir, state, taskdata["coeff"], t=t, task_id=task_id)
     save_measurement_data(job_dir, state, taskdata, meas)
 
-    # Save the final taskdata, overwriting the initial data file(s)
+    # Save the final taskdata, overwriting the initial data file(s).
     # Note that the values in taskdata that have been modified, have been
     # modified in place.
     save_task_data(job_dir, taskdata_relpath, taskdata, task_id, parent_id)
